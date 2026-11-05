@@ -1,0 +1,85 @@
+services:
+  gateway:
+    ports:
+    - ${BIND_ADDRESS:-192.168.1.100}:${HTTP_PORT:-8088}:8000
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:-http://192.168.1.100:8088}
+      STATE_DIR: /state
+      ARTIFACT_DIR: /artifacts
+    volumes:
+    - state:/state
+    - artifacts:/artifacts:ro
+    read_only: true
+    tmpfs:
+    - /tmp:size=64m,mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 128
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',
+        timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 240s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    env_file:
+    - .env
+    image: ghcr.io/gatanozoa/freecad-agent-gateway:${CAD_VERSION:-1.3.0}
+    pull_policy: if_not_present
+  worker:
+    environment:
+      STATE_DIR: /state
+      ARTIFACT_DIR: /artifacts
+      CAD_TIMEOUT: ${CAD_TIMEOUT:-180}
+    volumes:
+    - state:/state
+    - artifacts:/artifacts
+    network_mode: none
+    read_only: true
+    tmpfs:
+    - /tmp:size=384m,mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 3g
+    cpus: 2.0
+    pids_limit: 128
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test:
+      - CMD
+      - /opt/freecad/usr/bin/python
+      - -m
+      - cad_service.health
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 240s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    image: ghcr.io/gatanozoa/freecad-agent-worker:${CAD_VERSION:-1.3.0}
+    pull_policy: if_not_present
+volumes:
+  state: null
+  artifacts: null

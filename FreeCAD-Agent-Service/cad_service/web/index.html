@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FreeCAD · 服务管理</title>
+  <link rel="stylesheet" href="/admin/assets/style.css">
+  <script src="/admin/assets/app.js" defer></script>
+</head>
+<body>
+<section id="login-screen" class="login-wrap">
+  <div class="login-brand"><span class="mark">FC</span><span>FreeCAD<br><small>Agent Service</small></span></div>
+  <form id="login-form" class="login-form">
+    <p class="eyebrow">局域网建模服务</p><h1>登录管理后台</h1>
+    <p class="muted">管理 Agent、任务队列与模型存储。</p>
+    <label>用户名<input name="username" autocomplete="username" value="admin" required maxlength="40"></label>
+    <label>密码<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
+    <button class="primary" type="submit">登录</button>
+    <p class="hint">首次登录：<code>admin / admin</code>。登录后可在账号设置修改。</p>
+    <p id="login-error" class="error-text" role="alert"></p>
+  </form>
+</section>
+<div id="app" hidden>
+  <aside class="sidebar">
+    <div class="brand"><span class="mark">FC</span><div>FreeCAD<small>服务管理 · v1.3</small></div></div>
+    <nav aria-label="管理导航">
+      <button data-view="overview" class="active">服务总览</button>
+      <button data-view="agents">Agent 管理</button>
+      <button data-view="jobs">任务队列</button>
+      <button data-view="storage">模型与存储</button>
+      <button data-view="settings">运行设置</button>
+      <button data-view="account">账号设置</button>
+    </nav>
+    <div class="sidebar-foot"><span id="admin-name">admin</span><button id="logout" class="quiet">退出登录</button></div>
+  </aside>
+  <main>
+    <div id="default-warning" class="notice" hidden>当前仍使用初始密码。<button data-view="account" class="text-button">修改密码</button></div>
+    <header class="page-head"><div><p class="eyebrow">FREECAD AGENT SERVICE</p><h1 id="page-title">服务总览</h1><p id="page-description" class="muted"></p></div><button id="refresh" class="secondary">刷新</button></header>
+    <section id="content" aria-live="polite"></section>
+    <footer>单 Worker 串行建模 · 配置保存在 NAS · <span id="last-updated">等待同步</span></footer>
+  </main>
+</div>
+<dialog id="modal"><div class="dialog-head"><h2 id="modal-title"></h2><button id="close-modal" class="quiet" aria-label="关闭">关闭</button></div><div id="modal-body"></div></dialog>
+<div id="toast" role="status" hidden></div>
+</body></html>

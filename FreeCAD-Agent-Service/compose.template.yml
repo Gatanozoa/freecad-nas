@@ -1,0 +1,80 @@
+# Run setup.py to create docker-compose.yml with private agent credentials.
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+      args:
+        PYTHON_BASE: docker.io/library/python:3.13-slim-trixie
+    ports:
+      - "__BIND_IP__:__PORT__:8000"
+    environment:
+      CAD_AGENTS: '__AGENTS_JSON__'
+      PUBLIC_URL: "http://__BIND_IP__:__PORT__"
+      STATE_DIR: /state
+      ARTIFACT_DIR: /artifacts
+    volumes:
+      - state:/state
+      - artifacts:/artifacts:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 128
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 240s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    environment:
+      STATE_DIR: /state
+      ARTIFACT_DIR: /artifacts
+      CAD_TIMEOUT: "180"
+    volumes:
+      - state:/state
+      - artifacts:/artifacts
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=384m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 3g
+    cpus: 2.0
+    pids_limit: 128
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test: [CMD, /opt/freecad/usr/bin/python, -m, cad_service.health]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 240s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  state:
+  artifacts:

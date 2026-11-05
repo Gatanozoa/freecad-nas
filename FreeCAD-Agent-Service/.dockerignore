@@ -1,0 +1,10 @@
+.qa
+tests
+__pycache__
+**/__pycache__
+docker-compose.yml
+docker-compose.*.yml
+AGENT-CONNECTIONS.private.json
+.env
+*.zip
+.git
