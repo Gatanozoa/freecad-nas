@@ -1,6 +1,8 @@
 """Validate the built image without cloud, NAS, or private configuration."""
 import os
+import sys
 from pathlib import Path
+sys.path.insert(0, '/opt/mobile')
 from cryptography.fernet import Fernet
 from starlette.testclient import TestClient
 from mobile.api import create_app

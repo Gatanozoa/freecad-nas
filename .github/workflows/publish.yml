@@ -4,7 +4,8 @@ on:
     branches: [main]
     paths:
       - 'FreeCAD-Agent-Service/**'
-      - 'scripts/**'
+      - 'scripts/worker_smoke.py'
+      - 'scripts/check_release.py'
       - '.github/workflows/publish.yml'
       - 'deploy/cad/**'
     tags: ['v*']
