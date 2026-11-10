@@ -1,0 +1,6 @@
+mcp==1.30.0
+uvicorn==0.40.0
+starlette==1.10.0
+httpx==0.28.1
+cryptography==48.0.1
+Pillow==13.0.0

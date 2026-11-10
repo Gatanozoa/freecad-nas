@@ -1,0 +1,12 @@
+.env
+.git
+.qa
+tests
+__pycache__
+*.zip
+*.sqlite*
+local-data
+
+.env.*
+**/__pycache__
+**/*.pyc

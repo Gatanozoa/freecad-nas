@@ -1,0 +1,47 @@
+services:
+  app:
+    image: ghcr.io/gatanozoa/freecad-mobile:${MOBILE_VERSION:-0.2.0}
+    pull_policy: if_not_present
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    ports:
+    - ${BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-8089}:8000
+    volumes:
+    - mobile-data:/data
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+    - /tmp:size=64m,mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 384m
+    pids_limit: 64
+  orchestrator:
+    image: ghcr.io/gatanozoa/freecad-mobile:${MOBILE_VERSION:-0.2.0}
+    pull_policy: if_not_present
+    command:
+    - python
+    - -m
+    - mobile.worker
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+    - mobile-data:/data
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+    - /tmp:size=128m,mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 64
+volumes:
+  mobile-data: null

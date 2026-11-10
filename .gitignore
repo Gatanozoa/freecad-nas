@@ -16,7 +16,5 @@
 *.glb
 AGENT-CONNECTIONS.private.json
 **/AGENT-CONNECTIONS.private.json
-FreeCAD-Mobile/
-deploy/mobile/
 live-results/
 benchmarks/

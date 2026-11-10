@@ -1,0 +1,101 @@
+name: Test and publish mobile image
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'FreeCAD-Mobile/**'
+      - 'deploy/mobile/**'
+      - 'scripts/check_release.py'
+      - 'scripts/mobile_smoke.py'
+      - '.github/workflows/publish-mobile.yml'
+    tags: ['mobile-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: mobile-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python scripts/check_release.py
+      - run: python -m pip install -r FreeCAD-Mobile/requirements.txt playwright==1.64.1
+      - run: python -m playwright install --with-deps chromium
+      - name: Auth, configuration, queue, archive and script contract tests
+        working-directory: FreeCAD-Mobile
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Chat, preview, downloads, settings and failed task browser checks
+        working-directory: FreeCAD-Mobile
+        run: |
+          python tests/browser_chat.py
+          python tests/browser_provider_settings.py
+          python tests/browser_failed_details.py
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read image version
+        id: image
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          version=$(python -c "import ast; tree=ast.parse(open('FreeCAD-Mobile/mobile/__init__.py').read()); print(next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id=='__version__' for t in n.targets)))")
+          echo "name=ghcr.io/${owner}/freecad-mobile" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "revision=sha-${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Build Linux amd64 image on GitHub runner
+        uses: docker/build-push-action@3b5e8027fcad23fda98b2e3ac259d8d67585f671
+        with:
+          context: FreeCAD-Mobile
+          file: FreeCAD-Mobile/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: freecad-mobile-test:current
+          build-args: |
+            PYTHON_BASE=docker.io/library/python:3.13-slim-trixie
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.image.outputs.version }}
+          cache-from: type=gha,scope=mobile
+          cache-to: type=gha,mode=max,scope=mobile
+      - name: Verify actual image as unprivileged user with read-only root
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --tmpfs /tmp:rw,mode=1777 \
+            --tmpfs /data:rw,uid=10001,gid=10001,mode=0700 \
+            --mount type=bind,src="$PWD/scripts/mobile_smoke.py",dst=/smoke.py,readonly \
+            --entrypoint python freecad-mobile-test:current /smoke.py
+      - uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          VERSION: ${{ steps.image.outputs.version }}
+          REVISION: ${{ steps.image.outputs.revision }}
+        run: |
+          for tag in "$VERSION" "$REVISION" latest; do
+            docker tag freecad-mobile-test:current "$IMAGE:$tag"
+            docker push "$IMAGE:$tag"
+          done
+          echo "### Published $IMAGE:$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "One image, two containers: app and orchestrator." >> "$GITHUB_STEP_SUMMARY"
