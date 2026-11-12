@@ -5,9 +5,9 @@ import {OrbitControls} from './vendor/OrbitControls.js';
 export async function mountViewer(host,url){
   const response=await fetch(url);if(!response.ok)throw Error('预览文件读取失败，仍可查看任务或重新生成');
   const geometry=new STLLoader().parse(await response.arrayBuffer());geometry.computeBoundingBox();geometry.center();geometry.computeVertexNormals();
-  const size=geometry.boundingBox.getSize(new THREE.Vector3()), span=Math.max(size.x,size.y,size.z),scene=new THREE.Scene();scene.background=new THREE.Color('#e9efe9');
-  const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:'#72ad98',roughness:.65,metalness:.05}));scene.add(mesh);
-  scene.add(new THREE.HemisphereLight(0xffffff,0x486354,2.5));const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(2,4,3);scene.add(light);
+  const size=geometry.boundingBox.getSize(new THREE.Vector3()), span=Math.max(size.x,size.y,size.z),scene=new THREE.Scene();scene.background=new THREE.Color('#242529');
+  const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:'#c9c3ba',roughness:.65,metalness:.05}));scene.add(mesh);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x70665a,2.5));const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(2,4,3);scene.add(light);
   const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(host.clientWidth,host.clientHeight);host.replaceChildren(renderer.domElement);
   const camera=new THREE.PerspectiveCamera(38,host.clientWidth/host.clientHeight,span/1000,span*100);camera.up.set(0,0,1);camera.position.set(span*1.5,-span*1.8,span*1.4);
   const controls=new OrbitControls(camera,renderer.domElement);controls.update();controls.addEventListener('change',render);function render(){renderer.render(scene,camera)}

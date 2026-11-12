@@ -21,7 +21,7 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
         <label class="sr-only" for="provider">本次使用的模型</label><select id="provider">${options(draft.provider||latest?.provider||providers.find(p=>p.is_default)?.id)}</select>
         <button class="primary send-button" id="generate" aria-label="发送建模需求" title="发送">↑</button></div>
     </form><div class="composer-shortcuts"><button id="demo" class="quiet">运行固定零件测试</button><span id="composer-note" class="field-note"></span></div></div>
-  </section>`;
+  </section><aside class="chat-sidebar" aria-label="本次建模" hidden></aside>`;
   const $=s=>host.querySelector(s), messages=$('#messages');
   const dialog=document.querySelector('#preview-dialog'), content=dialog.querySelector('.preview-content');
   function newId(){return globalThis.crypto?.randomUUID?.()||Date.now()+'-'+Math.random()}
@@ -106,6 +106,8 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
         thumbnails(jobs,++thumbEpoch).catch(()=>{});
         if(nearBottom&&jobs.length)messages.scrollTop=messages.scrollHeight;
       }
+      const sidebar=host.querySelector('.chat-sidebar');sidebar.hidden=!latest;
+      if(latest){sidebar.innerHTML=`<h2>本次建模</h2><span class="pill">第 ${latest.version} 版 · ${esc(stages[latest.stage]||latest.status)}</span>${latest.report?.dimensions?`<div class="panel"><h3>实际尺寸</h3><p class="muted">${esc(latest.report.dimensions.map(v=>Number(v.toFixed(2))).join(' × '))} mm</p></div>`:''}${latest.archived?'<button class="primary" id="sidebar-preview">打开三维预览</button>':''}<a class="text-link" href="#detail/${latest.id}">查看任务详情 ›</a>`;sidebar.querySelector('#sidebar-preview')?.addEventListener('click',()=>openPreview(latest))}
       $('#chat-connection').hidden=true;controls();
       if(latest&&active(latest)){clearTimeout(timer);timer=setTimeout(refresh,2500)}
     }catch(error){if(disposed)return;$('#chat-connection').textContent=error.message+'，正在重试获取状态';$('#chat-connection').hidden=false;clearTimeout(timer);timer=setTimeout(refresh,4000)}
@@ -115,17 +117,19 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
   dialog.oncancel=e=>{e.preventDefault();closePreview()};
   async function openPreview(job){
     closePreview();const epoch=++previewEpoch;
-    content.innerHTML=`<h2 id="preview-title">第 ${job.version} 版 · 模型预览</h2><div class="tabs"><button id="preview-model" class="selected">三维模型</button><button id="preview-drawings">三视图</button></div><div class="viewer" id="preview-viewer"><div class="viewer-message">正在加载模型…</div></div><div class="drawings" id="preview-projections" hidden></div><p class="scroll-note">拖动旋转，双指缩放。三视图用于结构核对，不是加工图。</p>
-      <p>${esc(job.plan?.summary||'')}</p>${job.plan?.assumptions?.length?`<div class="notice"><strong>请核对建模假设</strong><ul>${job.plan.assumptions.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></div>`:''}
+    content.innerHTML=`<h2 id="preview-title">第 ${job.version} 版 · 模型预览</h2><div class="tabs" role="tablist" aria-label="预览方式"><button id="preview-model" role="tab" aria-selected="true" aria-controls="preview-viewer" class="selected">三维模型</button><button id="preview-drawings" role="tab" aria-selected="false" aria-controls="preview-projections" tabindex="-1">三视图</button></div><div class="viewer" id="preview-viewer"><div class="viewer-message">正在加载模型…</div></div><div class="drawings" id="preview-projections" hidden></div><p class="scroll-note">拖动旋转，双指缩放。三视图用于结构核对，不是加工图。</p>
+      <p class="preview-dimensions">${job.report?.dimensions?esc(job.report.dimensions.map(v=>Number(v.toFixed(2))).join(" × "))+" mm":""}</p><p>${esc(job.plan?.summary||'')}</p>${job.plan?.assumptions?.length?`<div class="notice"><strong>请核对建模假设</strong><ul>${job.plan.assumptions.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></div>`:''}
       <div class="preview-actions"></div>`;
     dialog.showModal();previewActions(job);
+    for(const tab of content.querySelectorAll('[role=tab]'))tab.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const target=content.querySelector(e.key==='Home'?'#preview-model':e.key==='End'?'#preview-drawings':tab.id==='preview-model'?'#preview-drawings':'#preview-model');target.click();target.focus()}};
+    function selectTab(drawings){for(const tab of content.querySelectorAll('[role=tab]')){const selected=(tab.id==='preview-drawings')===drawings;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1}}
     try{const {mountViewer}=await import('./viewer.js');if(disposed||epoch!==previewEpoch)return;
       const v=await mountViewer(content.querySelector('#preview-viewer'),`/api/jobs/${job.id}/files/model.stl`);
       if(disposed||epoch!==previewEpoch){v.dispose();return}preview=v;
     }catch(e){if(epoch===previewEpoch)content.querySelector('#preview-viewer').innerHTML=`<div class="viewer-message">${esc(e.message)}<button id="retry-preview">重试预览</button></div>`;content.querySelector('#retry-preview')?.addEventListener('click',()=>openPreview(job))}
     if(epoch!==previewEpoch)return;
-    content.querySelector('#preview-model').onclick=()=>{content.querySelector('#preview-viewer').hidden=false;content.querySelector('#preview-projections').hidden=true;content.querySelector('#preview-model').classList.add('selected');content.querySelector('#preview-drawings').classList.remove('selected')};
-    content.querySelector('#preview-drawings').onclick=()=>{if(!preview)return toast('请等待模型加载完成');content.querySelector('#preview-projections').innerHTML=preview.drawings().map(d=>`<figure><img src="${d.url}" alt="${d.name}"><figcaption>${d.name}</figcaption></figure>`).join('');content.querySelector('#preview-viewer').hidden=true;content.querySelector('#preview-projections').hidden=false;content.querySelector('#preview-model').classList.remove('selected');content.querySelector('#preview-drawings').classList.add('selected')};
+    content.querySelector('#preview-model').onclick=()=>{content.querySelector('#preview-viewer').hidden=false;content.querySelector('#preview-projections').hidden=true;content.querySelector('#preview-model').classList.add('selected');content.querySelector('#preview-drawings').classList.remove('selected');selectTab(false)};
+    content.querySelector('#preview-drawings').onclick=()=>{if(!preview)return toast('请等待模型加载完成');content.querySelector('#preview-projections').innerHTML=preview.drawings().map(d=>`<figure><img src="${d.url}" alt="${d.name}"><figcaption>${d.name}</figcaption></figure>`).join('');content.querySelector('#preview-viewer').hidden=true;content.querySelector('#preview-projections').hidden=false;content.querySelector('#preview-model').classList.remove('selected');content.querySelector('#preview-drawings').classList.add('selected');selectTab(true)};
   }
   function previewActions(job){
     const actions=content.querySelector('.preview-actions');

@@ -46,6 +46,10 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             page.goto(origin);page.locator('[name=password]').fill('admin');page.locator('#login-form button').click()
             expect(page.locator('#main h1')).to_have_text('创建模型');expect(page.locator('#provider')).to_have_value(provider)
             expect(page.locator('#create-add-provider')).to_have_count(0)
+            assert page.locator('html').evaluate("el=>getComputedStyle(el).backgroundColor")=='rgb(16, 17, 19)'
+            boxes=[page.locator(s).bounding_box() for s in ('#attach','#provider','#generate')]
+            assert all(abs(b['height']-44)<1 for b in boxes),boxes
+            assert max(b['y'] for b in boxes)-min(b['y'] for b in boxes)<1,boxes
             page.screenshot(path=str(screens/'11-chat-home-mobile.png'),full_page=True)
             page.locator('#prompt').fill('创建 60×30×5 mm 矩形板，中心开直径 6 mm 的孔。')
             image=io.BytesIO();Image.new('RGB',(30,30),'white').save(image,'PNG')
@@ -64,6 +68,9 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             expect(page.locator('#generate')).to_be_enabled();page.screenshot(path=str(screens/'13-chat-result-mobile.png'),full_page=True)
             page.locator('[data-preview]').click();expect(page.locator('#preview-viewer canvas')).to_be_visible(timeout=30000)
             page.locator('#preview-drawings').click();expect(page.locator('#preview-projections img')).to_have_count(3)
+            expect(page.locator('#preview-drawings')).to_have_attribute('aria-selected','true')
+            expect(page.locator('#preview-dialog[open]')).to_have_count(1)
+            page.screenshot(path=str(screens/'16-dark-projections-mobile.png'),full_page=True)
             page.locator('#preview-model').click();page.screenshot(path=str(screens/'14-chat-preview-mobile.png'),full_page=True)
             page.locator('#confirm-model').click();expect(page.locator('[data-download="model.stl"]')).to_be_visible()
             with page.expect_download() as dl:page.locator('[data-download="model.stl"]').click()
@@ -78,6 +85,7 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             expect(page.locator('.assistant-message').last).to_contain_text('孔径保持',timeout=15000)
             page.reload();expect(page.locator('.user-message')).to_have_count(2)
             page.set_viewport_size({'width':1440,'height':1000});page.screenshot(path=str(screens/'15-chat-history-desktop.png'),full_page=True)
+            expect(page.locator('.chat-sidebar')).to_be_visible()
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
             page.goto(origin+'/#create');page.locator('#demo').click();expect(page.locator('.thinking')).to_be_visible()
             page.locator('[data-cancel]').click();expect(page.locator('.assistant-message')).to_contain_text('任务已取消')
