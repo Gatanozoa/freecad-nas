@@ -8,7 +8,7 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
   const draftKey='zaowu-chat-draft-'+(latest?.project||'new');
   let draft={};try{draft=JSON.parse(localStorage.getItem(draftKey)||'{}')}catch{}
   if(location.hash!==route)return ()=>{};
-  host.classList.add('chat-page');
+  host.classList.add('chat-page');host.classList.toggle('chat-home',!latest);
   host.innerHTML=`<section class="chat-shell" aria-label="建模对话">
     <div class="chat-heading"><h1>${latest?esc(latest.name):'创建模型'}</h1>${latest?'<a class="text-link" href="#create">新建对话</a>':''}</div>
     <div id="messages" class="messages"></div><p id="chat-connection" class="field-note" role="status" hidden></p>
@@ -16,10 +16,10 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
       <div id="images" class="images" hidden></div>
       <label class="sr-only" for="prompt">描述结构与尺寸</label>
       <textarea id="prompt" required maxlength="12000" rows="2" placeholder="描述结构与尺寸，或补充修改要求…">${esc(draft.prompt||'')}</textarea>
-      <div class="composer-tools"><button type="button" id="attach" class="icon-button" aria-label="添加文件或图片" title="添加 JPG、PNG 或 WebP 参考图">＋</button>
+      <div class="composer-tools"><button type="button" id="attach" class="icon-button" aria-label="添加文件或图片" title="添加 JPG、PNG 或 WebP 参考图"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <input id="image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
         <label class="sr-only" for="provider">本次使用的模型</label><select id="provider">${options(draft.provider||latest?.provider||providers.find(p=>p.is_default)?.id)}</select>
-        <button class="primary send-button" id="generate" aria-label="发送建模需求" title="发送">↑</button></div>
+        <button class="primary send-button" id="generate" aria-label="发送建模需求" title="发送"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button></div>
     </form><div class="composer-shortcuts"><button id="demo" class="quiet">运行固定零件测试</button><span id="composer-note" class="field-note"></span></div></div>
   </section><aside class="chat-sidebar" aria-label="本次建模" hidden></aside>`;
   const $=s=>host.querySelector(s), messages=$('#messages');
@@ -73,7 +73,7 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
       ${job.stage==='cad_unavailable'?`<p class="notice error">${esc(job.cad_health?.message||'FreeCAD 执行端暂未就绪，恢复后会继续。')}</p>`:''}
       ${job.position?`<p class="field-note">前方 ${Math.max(0,job.position-1)} 个任务</p>`:''}<button class="quiet" data-cancel="${job.id}">取消任务</button>`;
     if(job.archived)return `<p>${job.status==='confirmed'?'这一版已确认。':'模型已生成，请打开预览核对尺寸和结构。'}</p>
-      <button class="model-message" data-preview="${job.id}" aria-label="打开第 ${job.version} 版三维预览"><div class="model-thumbnail" data-thumb="${job.id}"><span>正在准备模型缩略图…</span></div><span class="model-caption"><strong>第 ${job.version} 版</strong><span>${esc(job.report?.dimensions?.map(v=>Number(v.toFixed(2))).join(' × ')||'三维模型')}${job.report?.dimensions?' mm':''}</span><span class="preview-link">打开三维预览 ↗</span></span></button>`;
+      <button class="model-message" data-preview="${job.id}" aria-label="打开第 ${job.version} 版三维预览"><div class="model-thumbnail" data-thumb="${job.id}"><span>正在准备模型缩略图…</span></div><span class="model-caption"><strong>第 ${job.version} 版</strong><span>${esc(job.report?.dimensions?.map(v=>Number(v.toFixed(2))).join(' × ')||'三维模型')}${job.report?.dimensions?' mm':''}</span><span class="preview-link">打开三维预览 <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M6 6h12v12"/></svg></span></span></button>`;
     if(job.status==='needs_input')return `<p>还需要补充以下信息：</p><ul>${(job.plan?.questions||[]).map(q=>`<li>${esc(q)}</li>`).join('')}</ul><p class="field-note">在下方回复后，生成新版本。</p>`;
     return `<p>${job.status==='cancelled'?'任务已取消。':job.status==='interrupted'?'任务已中断，请重新发送需求。':'本次生成未完成，可以修改需求后重试。'}</p>${job.error?`<details><summary>查看错误原因</summary><pre>${esc(job.error)}</pre></details>`:''}`;
   }
@@ -107,7 +107,7 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
         if(nearBottom&&jobs.length)messages.scrollTop=messages.scrollHeight;
       }
       const sidebar=host.querySelector('.chat-sidebar');sidebar.hidden=!latest;
-      if(latest){sidebar.innerHTML=`<h2>本次建模</h2><span class="pill">第 ${latest.version} 版 · ${esc(stages[latest.stage]||latest.status)}</span>${latest.report?.dimensions?`<div class="panel"><h3>实际尺寸</h3><p class="muted">${esc(latest.report.dimensions.map(v=>Number(v.toFixed(2))).join(' × '))} mm</p></div>`:''}${latest.archived?'<button class="primary" id="sidebar-preview">打开三维预览</button>':''}<a class="text-link" href="#detail/${latest.id}">查看任务详情 ›</a>`;sidebar.querySelector('#sidebar-preview')?.addEventListener('click',()=>openPreview(latest))}
+      if(latest){sidebar.innerHTML=`<h2>本次建模</h2><span class="pill">第 ${latest.version} 版 · ${esc(stages[latest.stage]||latest.status)}</span>${latest.report?.dimensions?`<div class="panel"><h3>实际尺寸</h3><p class="muted">${esc(latest.report.dimensions.map(v=>Number(v.toFixed(2))).join(' × '))} mm</p></div>`:''}${latest.archived?'<button class="primary" id="sidebar-preview">打开三维预览</button>':''}<a class="text-link" href="#detail/${latest.id}">查看任务详情 <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></a>`;sidebar.querySelector('#sidebar-preview')?.addEventListener('click',()=>openPreview(latest))}
       $('#chat-connection').hidden=true;controls();
       if(latest&&active(latest)){clearTimeout(timer);timer=setTimeout(refresh,2500)}
     }catch(error){if(disposed)return;$('#chat-connection').textContent=error.message+'，正在重试获取状态';$('#chat-connection').hidden=false;clearTimeout(timer);timer=setTimeout(refresh,4000)}
@@ -139,5 +139,5 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
     actions.querySelectorAll('[data-download]').forEach(b=>b.onclick=()=>download(job.id,b.dataset.download));
   }
   resizeInput();controls();await refresh();
-  return ()=>{disposed=true;clearTimeout(timer);++thumbEpoch;closePreview();host.classList.remove('chat-page')};
+  return ()=>{disposed=true;clearTimeout(timer);++thumbEpoch;closePreview();host.classList.remove('chat-page','chat-home')};
 }
