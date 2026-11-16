@@ -46,3 +46,12 @@ nav{background:var(--paper);border:0;gap:8px}nav a{color:var(--muted)}nav a.acti
  .chat-viewport.keyboard-open .composer-dock{padding-top:6px}
  .chat-viewport.keyboard-open .chat-empty h2{font-size:20px}
 }
+
+@media(max-width:800px){
+ .chat-viewport.composer-editing nav,.chat-viewport.composer-editing .composer-shortcuts{display:none}
+ .chat-viewport.composer-editing .composer textarea{max-height:min(120px,calc(var(--chat-visible-height) * .25))}
+ .chat-viewport.keyboard-fallback .chat-heading{order:0}
+ .chat-viewport.keyboard-fallback .composer-dock{order:1;margin-top:8px}
+ .chat-viewport.keyboard-fallback .messages{order:2}
+ .chat-viewport.keyboard-fallback .chat-empty{align-items:flex-start;padding-top:20px}
+}

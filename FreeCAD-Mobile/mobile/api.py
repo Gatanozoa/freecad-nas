@@ -258,7 +258,13 @@ def create_app(store=None):
                 if count>11*1024*1024: raise ValueError('请求过大，最多 10MB 图片')
                 return message
             await self.app(scope,bounded,send)
+    class RevalidatedStaticFiles(StaticFiles):
+        async def get_response(self, path, scope):
+            response = await super().get_response(path, scope)
+            response.headers['Cache-Control'] = 'no-cache'
+            return response
+
     web=Path(__file__).parent/'web'
     async def index(request): return FileResponse(web/'index.html',headers={'Cache-Control':'no-cache'})
     async def service_worker(request): return FileResponse(web/'sw.js',media_type='text/javascript',headers={'Cache-Control':'no-cache'})
-    return BodyLimit(Starlette(routes=[Route('/api/{action:path}',endpoint,methods=['GET','POST','PATCH','DELETE']),Route('/',index),Route('/sw.js',service_worker),Mount('/static',app=StaticFiles(directory=web))]))
+    return BodyLimit(Starlette(routes=[Route('/api/{action:path}',endpoint,methods=['GET','POST','PATCH','DELETE']),Route('/',index),Route('/sw.js',service_worker),Mount('/static',app=RevalidatedStaticFiles(directory=web))]))
