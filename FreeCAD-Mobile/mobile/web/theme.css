@@ -31,3 +31,18 @@ nav{background:var(--paper);border:0;gap:8px}nav a{color:var(--muted)}nav a.acti
 @media(min-width:801px){header{max-width:none;background:var(--paper);height:84px;padding:0 max(28px,calc((100vw - 1200px)/2))}header .pill{margin-left:auto}nav{position:absolute;top:18px;bottom:auto;left:calc(50% - 230px);right:auto;border:0;padding:0;background:transparent;backdrop-filter:none;z-index:5}nav a{min-width:90px}main{padding-bottom:40px}.chat-page{max-width:1200px;height:calc(100dvh - 84px);display:grid;grid-template-columns:minmax(0,2fr) minmax(260px,1fr);gap:64px;padding:48px 28px 24px}.chat-page:has(.chat-sidebar[hidden]){grid-template-columns:minmax(0,760px);justify-content:center}.chat-sidebar:not([hidden]){display:flex;flex-direction:column;gap:16px;padding-top:2px}.chat-sidebar h2{font-size:20px;margin:0}.chat-sidebar .panel{margin:0;padding:18px}.chat-sidebar .panel p{margin-bottom:0}.chat-sidebar .text-link{background:var(--paper);padding:14px;border-radius:10px;color:inherit}.chat-sidebar .pill{border-radius:8px;padding:12px}.chat-shell{min-width:0}.chat-empty{justify-content:flex-start}.composer-shortcuts{min-height:44px}}
 
 .ui-icon{width:20px;height:20px;vertical-align:middle;flex-shrink:0}.preview-close{display:grid;place-items:center}@media(min-width:801px){.chat-page.chat-home{grid-template-columns:minmax(0,760px);justify-content:center}.chat-home .chat-empty{justify-content:center}}
+
+/* Constrain the chat shell to the area actually visible above the keyboard. */
+@media(max-width:800px){
+ body.chat-viewport{overflow:hidden}
+ .chat-viewport #shell{position:fixed;left:0;right:0;top:var(--chat-visible-top,0px);height:var(--chat-visible-height,100dvh);display:flex;flex-direction:column;overflow:hidden}
+ .chat-viewport header{width:100%;flex:0 0 66px}
+ .chat-viewport .chat-page{flex:1;width:100%;height:auto;min-height:0;padding:16px 24px 8px}
+ .chat-viewport .chat-shell{min-height:0}
+ .chat-viewport nav{position:static;flex:0 0 auto}
+ .chat-viewport.keyboard-open nav,.chat-viewport.keyboard-open .composer-shortcuts{display:none}
+ .chat-viewport.keyboard-open .chat-page{padding-bottom:8px}
+ .chat-viewport.keyboard-open .composer textarea{max-height:min(120px,calc(var(--chat-visible-height) * .25))}
+ .chat-viewport.keyboard-open .composer-dock{padding-top:6px}
+ .chat-viewport.keyboard-open .chat-empty h2{font-size:20px}
+}

@@ -51,6 +51,27 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             assert all(abs(b['height']-44)<1 for b in boxes),boxes
             assert max(b['y'] for b in boxes)-min(b['y'] for b in boxes)<1,boxes
             page.screenshot(path=str(screens/'11-chat-home-mobile.png'),full_page=True)
+            # Emulate a keyboard reducing ONLY the visual viewport (WebView behavior).
+            page.locator('#prompt').focus()
+            page.evaluate("""() => {
+                window.keyboardHeight=420;window.keyboardTop=0;
+                Object.defineProperty(visualViewport,'height',{configurable:true,get:()=>window.keyboardHeight});
+                Object.defineProperty(visualViewport,'offsetTop',{configurable:true,get:()=>window.keyboardTop});
+                visualViewport.dispatchEvent(new Event('resize'));
+            }""")
+            expect(page.locator('body')).to_have_class(__import__('re').compile('keyboard-open'))
+            expect(page.locator('nav')).not_to_be_visible()
+            page.locator('#prompt').fill('将直径改为 100 毫米，厚度保持 5 毫米。\n'*15)
+            page.wait_for_timeout(100)
+            for selector in ['#prompt','#generate']:
+                box=page.locator(selector).bounding_box();assert box['y']>=0 and box['y']+box['height']<=421,(selector,box)
+            page.screenshot(path=str(screens/'17-keyboard-visual-viewport.png'))
+            page.evaluate("window.keyboardTop=35;visualViewport.dispatchEvent(new Event('scroll'))")
+            page.wait_for_timeout(100)
+            box=page.locator('#prompt').bounding_box();assert box['y']>=35 and box['y']+box['height']<=456,box
+            page.evaluate("delete visualViewport.height;delete visualViewport.offsetTop;visualViewport.dispatchEvent(new Event('resize'))")
+            expect(page.locator('nav')).to_be_visible()
+            page.locator('#prompt').blur()
             page.locator('#prompt').fill('创建 60×30×5 mm 矩形板，中心开直径 6 mm 的孔。')
             image=io.BytesIO();Image.new('RGB',(30,30),'white').save(image,'PNG')
             page.locator('#image-input').set_input_files({'name':'reference.png','mimeType':'image/png','buffer':image.getvalue()})
@@ -91,6 +112,7 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             page.locator('[data-cancel]').click();expect(page.locator('.assistant-message')).to_contain_text('任务已取消')
             page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
             page.goto(origin+'/#settings');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
+            expect(page.locator('body')).not_to_have_class(__import__('re').compile('chat-viewport'))
             assert not errors,errors
             browser.close()
         print('PASS chat: home, upload, submit, live phases, draft preservation, true STL thumbnail, modal, projections, confirm/download, refresh, versions, questions, cancel, mobile/desktop, settings')

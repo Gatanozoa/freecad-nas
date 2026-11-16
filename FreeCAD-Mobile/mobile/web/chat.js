@@ -1,3 +1,4 @@
+import {trackChatViewport} from './viewport.js';
 // Conversation state is reconstructed from saved project versions, not browser-only messages.
 const thumbnailCache=new Map(); // In-memory only; private model images never enter persistent caches.
 export async function chatScreen({id,api,post,toast,esc,options,stages,active,download}) {
@@ -138,6 +139,7 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
     actions.querySelector('#confirm-model')?.addEventListener('click',async e=>{e.target.disabled=true;try{await post('jobs/'+job.id+'/confirm',{});job.status='confirmed';previewActions(job);await refresh()}catch(error){toast(error.message);e.target.disabled=false}});
     actions.querySelectorAll('[data-download]').forEach(b=>b.onclick=()=>download(job.id,b.dataset.download));
   }
+  const stopViewport=trackChatViewport(host);
   resizeInput();controls();await refresh();
-  return ()=>{disposed=true;clearTimeout(timer);++thumbEpoch;closePreview();host.classList.remove('chat-page','chat-home')};
+  return ()=>{stopViewport();disposed=true;clearTimeout(timer);++thumbEpoch;closePreview();host.classList.remove('chat-page','chat-home')};
 }
