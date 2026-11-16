@@ -20,14 +20,29 @@ from mobile import __version__
 
 FILES = {'model.FCStd','model.step','model.stl','report.json','source.py'}
 
+def configured_origin(value):
+    value = value.strip().rstrip('/')
+    parsed = urlsplit(value)
+    if (parsed.scheme not in ('http', 'https') or not parsed.hostname
+            or parsed.username or parsed.password or parsed.path or parsed.query
+            or parsed.fragment or '*' in value):
+        raise ValueError('来源白名单必须是完整的 http/https 地址，不得包含路径、通配符或账号')
+    parsed.port  # Reject invalid port configuration at startup.
+    return value
+
+
 def create_app(store=None):
+    public_url = os.environ.get('PUBLIC_URL', '').strip()
+    allowed_origins = {configured_origin(value) for value in
+                       [public_url, *os.environ.get('ALLOWED_ORIGINS', '').split(',')] if value.strip()}
     store = store or Store()
     async def endpoint(request):
         action = request.path_params.get('action','')
         try:
+            origin = request.headers.get('origin')
             if request.method != 'GET':
-                origin = request.headers.get('origin')
-                if origin and origin != os.environ.get('PUBLIC_URL', str(request.base_url).rstrip('/')):
+                permitted = allowed_origins or {str(request.base_url).rstrip('/')}
+                if origin and origin not in permitted:
                     return JSONResponse({'error':'页面来源不匹配，请使用部署配置中的访问地址'},403)
             if action == 'login' and request.method == 'POST':
                 data = await request.json()
@@ -48,7 +63,7 @@ def create_app(store=None):
                         db.execute('DELETE FROM sessions WHERE expires<?',(time.time(),))
                         db.execute('INSERT INTO sessions VALUES(?,?)',(hashlib.sha256(token.encode()).hexdigest(),time.time()+86400*7))
                         response=JSONResponse({'ok':True})
-                        response.set_cookie('mobile_session',token,max_age=86400*7,httponly=True,samesite='strict',secure=os.environ.get('PUBLIC_URL','').startswith('https://'),path='/api')
+                        response.set_cookie('mobile_session',token,max_age=86400*7,httponly=True,samesite='strict',secure=(origin or public_url or str(request.base_url)).startswith('https://'),path='/api')
                 return response
             token = request.cookies.get('mobile_session','')
             digest=hashlib.sha256(token.encode()).hexdigest()

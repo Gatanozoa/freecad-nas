@@ -40,6 +40,29 @@ class MobileTests(unittest.TestCase):
     def test_unauthenticated_and_origin(self):
         with TestClient(create_app(self.store)) as other:self.assertEqual(other.get('/api/jobs').status_code,401)
         self.assertEqual(self.client.post('/api/jobs',json={},headers={'Origin':'http://evil'}).status_code,403)
+    def test_multiple_origins_login_cookie_and_session(self):
+        with patch.dict(os.environ, {'PUBLIC_URL':'https://cad.example.com',
+                                    'ALLOWED_ORIGINS':' http://192.168.1.100:8089, https://cad.example.com:8443 '}):
+            app=create_app(self.store)
+            for origin,secure in [('https://cad.example.com',True),
+                                  ('http://192.168.1.100:8089',False),
+                                  ('https://cad.example.com:8443',True)]:
+                with self.subTest(origin=origin),TestClient(app,base_url=origin) as client:
+                    response=client.post('/api/login',json={'username':'admin','password':'admin'},headers={'Origin':origin})
+                    self.assertEqual(response.status_code,200)
+                    cookie=response.headers['set-cookie'].lower()
+                    self.assertEqual('; secure' in cookie,secure)
+                    self.assertIn('httponly',cookie);self.assertIn('samesite=strict',cookie)
+                    self.assertEqual(client.get('/api/session').status_code,200)
+                    self.assertEqual(client.post('/api/jobs',json={'prompt':'测试','demo':True},headers={'Origin':origin}).status_code,202)
+                    for evil in ['https://evil.example','null','https://cad.example.com.evil',
+                                 'http://cad.example.com','http://192.168.1.100:8090']:
+                        self.assertEqual(client.post('/api/login',json={},headers={'Origin':evil}).status_code,403)
+                        self.assertEqual(client.post('/api/jobs',json={},headers={'Origin':evil}).status_code,403)
+    def test_invalid_origin_configuration_rejected(self):
+        for value in ['*','https://*.example.com','https://example.com/path','https://user:pass@example.com','https://example.com:bad']:
+            with self.subTest(value=value),patch.dict(os.environ,{'ALLOWED_ORIGINS':value}):
+                with self.assertRaises(ValueError):create_app(self.store)
     def test_provider_secret_encrypted_and_not_returned(self):
         pid=self.provider();self.assertNotIn('sensitive-model-key',self.client.get('/api/providers').text)
         with self.store.db() as db:
