@@ -1,5 +1,7 @@
 """Explicit Chat Completions adapter; never guesses vision support from model name."""
 import json
+from pathlib import Path
+from mobile.measurement import review
 import httpx
 from urllib.parse import urlsplit
 
@@ -40,10 +42,12 @@ result 必须在模块顶层赋值，不是JSON字段，不是仅存在于函数
 如果用函数组织建模，函数应返回最终文档对象，并在模块顶层调用 result = build_model()。
 不能将 result 设为 None、字典、文件名、函数或Document本身；不要只给其他变量赋值后遗漏result。'''
 
+MEASUREMENT_RULES = (Path(__file__).parent/'rules/measurement.md').read_text(encoding='utf-8')
+
 async def generate(config, prompt, images=(), base=None, feedback=None):
     content = [{'type':'text','text':prompt}]
     content += [{'type':'image_url','image_url':{'url':image}} for image in images]
-    messages = [{'role':'system','content':SYSTEM}]
+    messages = [{'role':'system','content':SYSTEM+'\n'+MEASUREMENT_RULES}]
     if base:
         messages.append({'role':'user','content':'上一版完整脚本：\n' + base})
     messages.append({'role':'user','content':content if images else prompt})
@@ -66,8 +70,12 @@ async def generate(config, prompt, images=(), base=None, feedback=None):
     for key in ('questions','assumptions','dimensions'):
         if not isinstance(plan.get(key,[]),list) or any(not isinstance(x,str) for x in plan.get(key,[])):
             raise ValueError('模型返回的说明字段格式错误')
-    if not plan.get('questions') and not 1 <= len(plan['script']) <= 50000:
+    if len(plan['script']) > 50000:
         raise ValueError('脚本为空或超过 50000 字符')
+    for key in ('measurement_approval','measurement_confirmed_at','measurement_review'):
+        plan.pop(key,None)
+    if review(plan)['ready'] and not plan['script']:
+        raise ValueError('参数完整但缺少建模脚本')
     return plan, body.get('usage')
 
 async def probe(config, vision=False):

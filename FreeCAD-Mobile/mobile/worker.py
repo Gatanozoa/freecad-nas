@@ -13,6 +13,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mobile.store import Store
 from mobile.provider import generate
 from mobile.script_contract import prepare_script
+from mobile.measurement import review, approved, history_context
 
 DEMO='''import FreeCAD as App
 import Part
@@ -155,6 +156,11 @@ async def process(store,job_id):
             await archive(store,job_id); return
         config=json.loads(store.cipher.decrypt(_config(store,job_id).encode()))
         base=store.job(row['parent'])['script'] if row['parent'] else None
+        prompt=row['prompt']+history_context(store,row)
+        approval=row.get('plan') or {}
+        resume_measurements=row['stage']=='dimensions_confirmed' and approved(approval,row['script'])
+        if resume_measurements:
+            prompt+='\n用户已确认的本次尺寸（自动修复不得变更）：\n'+json.dumps(approval.get('measurement'),ensure_ascii=False)
         inherited_images=[]
         parent=row
         while parent.get('parent') and not inherited_images:
@@ -163,19 +169,36 @@ async def process(store,job_id):
         if images and not config.get('vision'):
             raise ValueError('本次修改沿用了参考图，请使用已启用图片输入的模型配置')
         usage=row['usage']; feedback=None
-        for attempt in range(2):
+        for attempt in range(row['attempt'] if resume_measurements else 0,2):
             cancelled(store,job_id)
-            if row['stage']=='demo':
+            if resume_measurements and attempt==row['attempt']:
+                plan={**approval,'script':row['script']}
+            elif row['stage']=='demo':
                 plan={'summary':'60 × 30 × 5 mm 矩形板，中心 Ø6 mm 贯穿孔','dimensions':['长 60 mm','宽 30 mm','厚 5 mm','中心孔 Ø6 mm'],'assumptions':[],'questions':[],'script':DEMO}
             else:
                 store.update(job_id,stage='generating' if attempt==0 else 'repairing',attempt=attempt)
                 try:
-                    plan,used=await interruptible(store,job_id,generate(config,row['prompt'],images,base,feedback))
+                    plan,used=await interruptible(store,job_id,generate(config,prompt,images,base,feedback))
                 except (ValueError,KeyError,TypeError) as exc:
                     if attempt: raise
                     feedback='上次响应格式不符合约定，请仅返回约定的 JSON 对象。'+store.safe_error(exc)
                     continue
+                for key in ('measurement_approval','measurement_confirmed_at'):
+                    plan.pop(key,None)
                 usage.append(used)
+            if row['stage']!='demo':
+                dimensions=review(plan)
+                plan['measurement']= {'parameters':dimensions['parameters'],'issues':dimensions['issues']}
+                plan['measurement_review']=dimensions
+                if not dimensions['ready']:
+                    plan['questions']=dimensions['questions'];plan['script']=''
+                else:
+                    # A repair may reuse approval only for an identical parameter specification.
+                    same_spec=resume_measurements and plan['measurement']==approval.get('measurement') and plan.get('assumptions',[])==approval.get('assumptions',[]) and plan.get('dimensions',[])==approval.get('dimensions',[])
+                    if not (approved(plan,plan['script']) or same_spec):
+                        store.update(job_id,plan=json.dumps({k:v for k,v in plan.items() if k!='script'},ensure_ascii=False),script=plan['script'],usage=json.dumps(usage),status='needs_confirmation',stage='dimensions_review')
+                        return
+                    if not plan['script']: raise ValueError('尺寸已确认但没有可用脚本，请重新生成')
             store.update(job_id,plan=json.dumps({k:v for k,v in plan.items() if k!='script'},ensure_ascii=False),script=plan['script'],usage=json.dumps(usage))
             if plan.get('questions'):
                 store.update(job_id,status='needs_input',stage='needs_input'); return

@@ -2,7 +2,7 @@
 const trace=[];
 export function viewportReport(){
   const v=window.visualViewport,p=document.querySelector('#prompt'),r=p?.getBoundingClientRect();
-  return JSON.stringify({client:'0.3.4',origin:location.origin,userAgent:navigator.userAgent,
+  return JSON.stringify({client:'0.4.0',origin:location.origin,userAgent:navigator.userAgent,
     standalone:matchMedia('(display-mode:standalone)').matches,innerHeight,innerWidth,
     visual:v?{height:v.height,top:v.offsetTop,scale:v.scale}:null,
     prompt:r?{top:r.top,bottom:r.bottom}:null,events:trace},null,2);

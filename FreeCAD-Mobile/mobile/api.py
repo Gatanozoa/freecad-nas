@@ -17,6 +17,7 @@ from starlette.staticfiles import StaticFiles
 from mobile.store import Store, password_ok, password_hash
 from mobile.provider import probe, normalize_base_url
 from mobile import __version__
+from mobile.measurement import review, approval_digest
 
 FILES = {'model.FCStd','model.step','model.stl','report.json','source.py'}
 
@@ -203,7 +204,27 @@ def create_app(store=None):
                         if job['status']!='review' or not job['archived']:
                             raise ValueError('请等待草稿生成并归档完成')
                         store.update(job['id'],status='confirmed',stage='confirmed')
+                    elif parts[2]=='confirm-dimensions':
+                        with store.db() as db:
+                            db.execute('BEGIN IMMEDIATE')
+                            current=db.execute('SELECT * FROM jobs WHERE id=?',(job['id'],)).fetchone()
+                            plan=json.loads(current['plan'] or '{}')
+                            latest=db.execute('SELECT max(version) FROM jobs WHERE project=?',(current['project'],)).fetchone()[0]
+                            if latest!=current['version']: raise ValueError('已有新版本，请确认最新版本的尺寸')
+                            if current['status']=='needs_confirmation':
+                                if not review(plan)['ready'] or not current['script']:
+                                    raise ValueError('必要尺寸或脚本仍不完整，请先补充信息')
+                                if db.execute("SELECT count(*) FROM jobs WHERE status IN ('pending','working','cancelling')").fetchone()[0]>=20:
+                                    raise ValueError('待处理任务已满，请稍后确认')
+                                plan['measurement_approval']=approval_digest(plan,current['script'])
+                                plan['measurement_confirmed_at']=time.time()
+                                db.execute("UPDATE jobs SET plan=?,status='pending',stage='dimensions_confirmed',cancel=0,updated=? WHERE id=?",
+                                           (json.dumps(plan,ensure_ascii=False),time.time(),job['id']))
+                            elif not plan.get('measurement_approval'):
+                                raise ValueError('当前任务不在尺寸确认阶段')
                     elif parts[2]=='cancel':
+                        if job['status'] in ('needs_input','needs_confirmation'):
+                            store.update(job['id'],status='cancelled',stage='cancelled',cancel=1)
                         with store.db() as db:
                             db.execute("UPDATE jobs SET cancel=1,status=CASE WHEN status='pending' THEN 'cancelled' ELSE 'cancelling' END,updated=? WHERE id=? AND status IN ('pending','working','cancelling')",(time.time(),job['id']))
                     else:

@@ -11,7 +11,7 @@ import time
 import uuid
 from cryptography.fernet import Fernet
 
-TERMINAL = {'review', 'confirmed', 'failed', 'cancelled', 'interrupted', 'needs_input'}
+TERMINAL = {'review', 'confirmed', 'failed', 'cancelled', 'interrupted', 'needs_input', 'needs_confirmation'}
 
 def password_hash(password, salt=None):
     salt = salt or secrets.token_hex(16)

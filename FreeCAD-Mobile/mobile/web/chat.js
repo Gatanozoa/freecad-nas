@@ -1,4 +1,5 @@
-import {trackChatViewport} from './viewport.js?v=0.3.4';
+import {measurementCard} from './measurement-ui.js?v=0.4.0';
+import {trackChatViewport} from './viewport.js?v=0.4.0';
 // Conversation state is reconstructed from saved project versions, not browser-only messages.
 const thumbnailCache=new Map(); // In-memory only; private model images never enter persistent caches.
 export async function chatScreen({id,api,post,toast,esc,options,stages,active,download}) {
@@ -32,7 +33,7 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
     const busy=!!latest&&active(latest);
     $('#generate').disabled=busy||uploading||sending;$('#demo').disabled=busy||uploading||sending;
     $('#attach').disabled=uploading||sending;
-    $('#composer-note').textContent=uploading?'正在上传…':busy?'任务进行中，可先填写下一步修改要求':images.length?'最多 4 张 · JPG / PNG / WebP · 每张 10MB':!providers.length?'请先到设置中添加模型，或运行固定测试':latest?'发送后生成新版本，原版本保留':'';
+    $('#composer-note').textContent=uploading?'正在上传…':busy?'任务进行中，可先填写下一步修改要求':images.length?'最多 4 张 · JPG / PNG / WebP · 每张 10MB':!providers.length?'请先到设置中添加模型，或运行固定测试':latest?(['needs_input','needs_confirmation'].includes(latest.status)?'补充或修改尺寸后，重新整理确认清单':'发送后生成新版本，原版本保留'):'';
   }
   $('#prompt').oninput=()=>{resizeInput();persist()};$('#provider').onchange=persist;
   $('#prompt').onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)&&!e.isComposing){e.preventDefault();if(!$('#generate').disabled)$('#create-form').requestSubmit()}};
@@ -75,12 +76,12 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
       ${job.position?`<p class="field-note">前方 ${Math.max(0,job.position-1)} 个任务</p>`:''}<button class="quiet" data-cancel="${job.id}">取消任务</button>`;
     if(job.archived)return `<p>${job.status==='confirmed'?'这一版已确认。':'模型已生成，请打开预览核对尺寸和结构。'}</p>
       <button class="model-message" data-preview="${job.id}" aria-label="打开第 ${job.version} 版三维预览"><div class="model-thumbnail" data-thumb="${job.id}"><span>正在准备模型缩略图…</span></div><span class="model-caption"><strong>第 ${job.version} 版</strong><span>${esc(job.report?.dimensions?.map(v=>Number(v.toFixed(2))).join(' × ')||'三维模型')}${job.report?.dimensions?' mm':''}</span><span class="preview-link">打开三维预览 <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M6 6h12v12"/></svg></span></span></button>`;
-    if(job.status==='needs_input')return `<p>还需要补充以下信息：</p><ul>${(job.plan?.questions||[]).map(q=>`<li>${esc(q)}</li>`).join('')}</ul><p class="field-note">在下方回复后，生成新版本。</p>`;
+    if(['needs_input','needs_confirmation'].includes(job.status))return measurementCard(job,esc,job.id===latest?.id);
     return `<p>${job.status==='cancelled'?'任务已取消。':job.status==='interrupted'?'任务已中断，请重新发送需求。':'本次生成未完成，可以修改需求后重试。'}</p>${job.error?`<details><summary>查看错误原因</summary><pre>${esc(job.error)}</pre></details>`:''}`;
   }
   function stageIndex(job){return ['generating','repairing','pending','demo'].includes(job.stage)?0:['submitting','cad_queued','cad_unavailable'].includes(job.stage)?1:job.stage==='building'?2:3}
   async function thumbnails(jobs,epoch){
-    const {mountViewer}=await import('./viewer.js?v=0.3.4');
+    const {mountViewer}=await import('./viewer.js?v=0.4.0');
     for(const job of jobs.filter(j=>j.archived)){
       if(disposed||epoch!==thumbEpoch)return;
       const target=messages.querySelector(`[data-thumb="${job.id}"]`);if(!target)continue;
@@ -97,11 +98,12 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
     try{
       let jobs=[];
       if(latest){const all=await api('jobs?project='+encodeURIComponent(latest.project));if(disposed||location.hash!==route)return;jobs=all.filter(j=>j.project===latest.project).sort((a,b)=>a.version-b.version);if(!jobs.length)throw Error('项目已被删除');latest=jobs.at(-1)}
-      const sig=JSON.stringify(jobs.map(j=>[j.id,j.status,j.stage,j.position,j.archived,j.error,j.cad_health,j.name]));
+      const sig=JSON.stringify(jobs.map(j=>[j.id,j.status,j.stage,j.position,j.archived,j.error,j.cad_health,j.name,j.plan]));
       if(sig!==signature){
         const nearBottom=messages.scrollTop+messages.clientHeight>=messages.scrollHeight-160;
         signature=sig;
         messages.innerHTML=jobs.length?jobs.map(j=>`<article class="chat-turn"><div class="user-message"><p>${esc(userText(j))}</p>${j.images.length?`<div class="message-images">${j.images.map((img,i)=>`<a href="/api/uploads/${img}" target="_blank" rel="noopener"><img src="/api/uploads/${img}" alt="参考图 ${i+1}"></a>`).join('')}</div>`:''}</div><div class="assistant-message">${response(j)}<a class="task-details" href="#detail/${j.id}">任务详情 · 第 ${j.version} 版</a></div></article>`).join(''):'<div class="chat-empty"><h2>今天想做什么零件？</h2></div>';
+        host.querySelectorAll('[data-confirm-dimensions]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post('jobs/'+b.dataset.confirmDimensions+'/confirm-dimensions',{});await refresh()}catch(e){toast(e.message);b.disabled=false}});
         host.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>openPreview(jobs.find(j=>j.id===b.dataset.preview)));
         host.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post('jobs/'+b.dataset.cancel+'/cancel',{});await refresh()}catch(e){toast(e.message);b.disabled=false}});
         thumbnails(jobs,++thumbEpoch).catch(()=>{});
@@ -124,7 +126,7 @@ export async function chatScreen({id,api,post,toast,esc,options,stages,active,do
     dialog.showModal();previewActions(job);
     for(const tab of content.querySelectorAll('[role=tab]'))tab.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const target=content.querySelector(e.key==='Home'?'#preview-model':e.key==='End'?'#preview-drawings':tab.id==='preview-model'?'#preview-drawings':'#preview-model');target.click();target.focus()}};
     function selectTab(drawings){for(const tab of content.querySelectorAll('[role=tab]')){const selected=(tab.id==='preview-drawings')===drawings;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1}}
-    try{const {mountViewer}=await import('./viewer.js?v=0.3.4');if(disposed||epoch!==previewEpoch)return;
+    try{const {mountViewer}=await import('./viewer.js?v=0.4.0');if(disposed||epoch!==previewEpoch)return;
       const v=await mountViewer(content.querySelector('#preview-viewer'),`/api/jobs/${job.id}/files/model.stl`);
       if(disposed||epoch!==previewEpoch){v.dispose();return}preview=v;
     }catch(e){if(epoch===previewEpoch)content.querySelector('#preview-viewer').innerHTML=`<div class="viewer-message">${esc(e.message)}<button id="retry-preview">重试预览</button></div>`;content.querySelector('#retry-preview')?.addEventListener('click',()=>openPreview(job))}

@@ -16,6 +16,8 @@ from playwright.sync_api import sync_playwright, expect
 from starlette.testclient import TestClient
 from mobile.store import Store
 from mobile.api import create_app
+from mobile.worker import DEMO
+from mobile.measurement import review
 
 qa=bootstrap.ROOT/'.qa'; screens=qa/'screens';screens.mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory(dir=qa) as directory:
@@ -112,16 +114,34 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             with page.expect_response(lambda r:r.url==origin+'/api/jobs' and r.request.method=='POST') as response:page.locator('#generate').click()
             second=response.value.json();assert second['parent']==job and second['version']==2
             expect(page.locator('.user-message')).to_have_count(2);expect(page.locator('.user-message').last).to_have_text('将厚度改为 8 mm')
-            store.update(second['id'],status='needs_input',stage='needs_input',plan=json.dumps({'questions':['孔径保持 6 mm 吗？']}))
+            store.update(second['id'],status='needs_input',stage='needs_input',plan=json.dumps({'questions':['孔径保持 6 mm 吗？'],'measurement':{'parameters':[{'name':'孔径','value':'','source':'unknown','required':True,'measurement_hint':'用卡尺内测量爪测量孔的内径'}],'issues':[]}}))
             expect(page.locator('.assistant-message').last).to_contain_text('孔径保持',timeout=15000)
             page.reload();expect(page.locator('.user-message')).to_have_count(2)
+            expect(page.locator('.measurement-tip')).to_contain_text('卡尺')
+            page.locator('#prompt').fill('孔径保持6mm，厚度改为8mm')
+            with page.expect_response(lambda r:r.url==origin+'/api/jobs' and r.request.method=='POST') as response:page.locator('#generate').click()
+            third=response.value.json()
+            plan={'summary':'尺寸已整理','questions':[],'assumptions':['中心孔贯通'],
+                  'measurement':{'parameters':[{'name':'板厚','value':'8 mm','source':'user','required':True},
+                                               {'name':'孔径','value':'6 mm','source':'user','required':True},
+                                               {'name':'倒角','value':'0.5 mm','source':'estimate','required':False}],'issues':[]}}
+            plan['measurement_review']=review(plan)
+            store.update(third['id'],status='needs_confirmation',stage='dimensions_review',script=DEMO,plan=json.dumps(plan))
+            expect(page.locator('[data-confirm-dimensions]')).to_be_enabled(timeout=15000)
+            expect(page.locator('.estimated')).to_contain_text('建议 / 估算')
+            expect(page.locator('.thinking')).to_have_count(0)
+            page.screenshot(path=str(screens/'19-measurement-confirmation-mobile.png'),full_page=True)
+            page.locator('[data-confirm-dimensions]').click()
+            expect(page.locator('.thinking')).to_be_visible()
+            assert store.job(third['id'])['stage']=='dimensions_confirmed'
+            finish(third['id']);expect(page.locator('[data-thumb="'+third['id']+'"] img')).to_be_visible(timeout=30000)
             page.set_viewport_size({'width':1440,'height':1000});page.screenshot(path=str(screens/'15-chat-history-desktop.png'),full_page=True)
             expect(page.locator('.chat-sidebar')).to_be_visible()
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
             page.goto(origin+'/#create');page.locator('#demo').click();expect(page.locator('.thinking')).to_be_visible()
             page.locator('[data-cancel]').click();expect(page.locator('.assistant-message')).to_contain_text('任务已取消')
             page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            page.goto(origin+'/#settings');expect(page.locator('#client-version')).to_contain_text('0.3.4');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
+            page.goto(origin+'/#settings');expect(page.locator('#client-version')).to_contain_text('0.4.0');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
             expect(page.locator('body')).not_to_have_class(__import__('re').compile('chat-viewport'))
             assert not errors,errors
             browser.close()

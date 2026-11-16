@@ -125,18 +125,26 @@ class MobileTests(unittest.TestCase):
             await asyncio.sleep(5)
         with patch('mobile.worker.generate',slow):asyncio.run(worker.process(self.store,j['id']))
         self.assertEqual(self.store.job(j['id'])['status'],'cancelled')
+    def measurement_plan(self,script):
+        return {'script':script,'questions':[],'summary':'测试板','assumptions':[],
+                'measurement':{'parameters':[{'name':'外形尺寸','value':'60 × 30 × 5 mm','source':'user','required':True}], 'issues':[]}}
     def test_repairs_only_once(self):
         pid=self.provider();j=self.job(demo=False,provider=pid)
-        gen=AsyncMock(return_value=({'script':worker.DEMO,'questions':[],'summary':'','assumptions':[]}, {'total_tokens':2}))
+        gen=AsyncMock(return_value=(self.measurement_plan(worker.DEMO), {'total_tokens':2}))
         with patch('mobile.worker.generate',gen),patch('mobile.worker.execute',AsyncMock(side_effect=ValueError('invalid solid'))):
+            asyncio.run(worker.process(self.store,j['id']))
+            self.assertEqual(self.store.job(j['id'])['status'],'needs_confirmation')
+            self.assertEqual(self.client.post('/api/jobs/'+j['id']+'/confirm-dimensions',json={}).status_code,200)
             asyncio.run(worker.process(self.store,j['id']))
         self.assertEqual(gen.await_count,2);self.assertEqual(self.store.job(j['id'])['status'],'failed')
         self.assertEqual(len(self.store.job(j['id'])['usage']),2)
     def test_missing_result_repairs_before_cad_submission(self):
         pid=self.provider();j=self.job(demo=False,provider=pid)
-        gen=AsyncMock(side_effect=[({'script':'shape = None','questions':[]},None),({'script':worker.DEMO,'questions':[]},None)])
+        gen=AsyncMock(side_effect=[(self.measurement_plan('shape = None'),None),(self.measurement_plan(worker.DEMO),None)])
         execute=AsyncMock(return_value={'ok':True})
         with patch('mobile.worker.generate',gen),patch('mobile.worker.execute',execute),patch('mobile.worker.archive',AsyncMock()):
+            asyncio.run(worker.process(self.store,j['id']))
+            self.assertEqual(self.client.post('/api/jobs/'+j['id']+'/confirm-dimensions',json={}).status_code,200)
             asyncio.run(worker.process(self.store,j['id']))
         self.assertEqual(gen.await_count,2);self.assertEqual(execute.await_count,1)
         self.assertIn('result',gen.call_args.args[4])
