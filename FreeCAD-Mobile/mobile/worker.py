@@ -239,8 +239,8 @@ async def main():
         import fcntl
         fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
     with store.db() as db:
-        db.execute("UPDATE jobs SET status='interrupted',stage='failed',error='移动端后台在模型调用过程中重启；为避免重复计费，未自动重试，请手动重新生成' WHERE status IN ('working','cancelling') AND stage IN ('generating','repairing')")
-        db.execute("UPDATE jobs SET status='pending' WHERE status IN ('working','cancelling')")
+        db.execute("UPDATE jobs SET status='interrupted',stage='failed',error='移动端后台在模型调用过程中重启；为避免重复计费，未自动重试，请手动重新生成',updated=? WHERE status IN ('working','cancelling') AND stage IN ('generating','repairing')",(time.time(),))
+        db.execute("UPDATE jobs SET status='pending',updated=? WHERE status IN ('working','cancelling')", (time.time(),))
     async def heartbeat():
         while True:
             with store.db() as db: db.execute('INSERT OR REPLACE INTO runtime VALUES(1,?)',(time.time(),))

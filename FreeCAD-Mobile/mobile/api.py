@@ -178,9 +178,16 @@ def create_app(store=None):
                         project=request.query_params.get('project')
                         if project:
                             ids=[r[0] for r in db.execute('SELECT j.id FROM jobs j JOIN projects p ON j.project=p.id WHERE p.deleted=0 AND j.project=? ORDER BY j.version', (project,))]
+                        elif request.query_params.get('view') == 'projects':
+                            ids = [r[0] for r in db.execute('''
+                                SELECT id FROM (
+                                    SELECT j.id,j.created,row_number() OVER(PARTITION BY j.project ORDER BY j.version DESC) AS rank
+                                    FROM jobs j JOIN projects p ON p.id=j.project WHERE p.deleted=0
+                                ) WHERE rank=1 ORDER BY created DESC
+                            ''')]
                         else:
                             ids=[r[0] for r in db.execute('SELECT j.id FROM jobs j JOIN projects p ON j.project=p.id WHERE p.deleted=0 ORDER BY j.created DESC LIMIT 300')]
-                    rows=[store.job(i) for i in ids]
+                    rows=[store.job(i, history=bool(project)) for i in ids]
                     for row in rows:
                         row.pop('script',None)
                     return JSONResponse(rows)
@@ -188,15 +195,23 @@ def create_app(store=None):
                     data=await request.json(); prompt=data.get('prompt','').strip(); images=data.get('images',[])
                     if not 1<=len(prompt)<=12000 or not isinstance(images,list) or len(images)>4:
                         raise ValueError('请填写 1～12000 字的需求，参考图最多四张')
+                    provider, parent = data.get('provider'), data.get('parent')
+                    demo, request_id = bool(data.get('demo')), data.get('request_id')
+                    if request_id is not None and (not isinstance(request_id, str) or len(request_id) > 128):
+                        raise ValueError('请求编号无效')
+                    # A committed request can be recovered even if the model configuration has since changed.
+                    previous = store.submitted_job(request_id, prompt, provider, images, parent, demo)
+                    if previous:
+                        return JSONResponse(store.job(previous), 202)
                     for name in images:
                         if not isinstance(name,str) or str(uuid.UUID(name.removesuffix('.jpg')))+'.jpg'!=name or not (store.root/'uploads'/name).is_file():
                             raise ValueError('参考图不存在，请重新上传')
                     if images and not data.get('demo') and not store.provider(data.get('provider')).get('vision'):
                         raise ValueError('该配置未启用图片输入，请到设置中选择支持图片的模型')
-                    job_id=store.submit(prompt,data.get('provider'),images,data.get('parent'),bool(data.get('demo')),data.get('request_id'))
+                    job_id=store.submit(prompt,provider,images,parent,demo,request_id)
                     return JSONResponse(store.job(job_id),202)
             if action.startswith('jobs/'):
-                parts=action.split('/'); job=store.job(parts[1])
+                parts=action.split('/'); job=store.job(parts[1], history=len(parts)==2)
                 if len(parts)==2 and request.method=='GET':
                     return JSONResponse(job)
                 if len(parts)==3 and request.method=='POST':
@@ -229,7 +244,7 @@ def create_app(store=None):
                             db.execute("UPDATE jobs SET cancel=1,status=CASE WHEN status='pending' THEN 'cancelled' ELSE 'cancelling' END,updated=? WHERE id=? AND status IN ('pending','working','cancelling')",(time.time(),job['id']))
                     else:
                         raise LookupError('操作不存在')
-                    return JSONResponse(store.job(job['id']))
+                    return JSONResponse(store.job(job['id'], history=True))
                 if len(parts)==4 and parts[2]=='files' and request.method=='GET':
                     name=parts[3]
                     if name not in FILES:

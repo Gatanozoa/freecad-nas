@@ -38,6 +38,24 @@ class Store:
                     script TEXT, plan TEXT, report TEXT, usage TEXT, error TEXT, remote TEXT,
                     cancel INTEGER DEFAULT 0, position INTEGER, attempt INTEGER DEFAULT 0,
                     request_id TEXT UNIQUE, config TEXT, archived INTEGER DEFAULT 0);
+                CREATE TABLE IF NOT EXISTS job_events(
+                    seq INTEGER PRIMARY KEY, job_id TEXT NOT NULL, status TEXT NOT NULL,
+                    stage TEXT NOT NULL, at REAL NOT NULL);
+                CREATE INDEX IF NOT EXISTS job_events_order ON job_events(job_id, seq);
+                CREATE TRIGGER IF NOT EXISTS log_job_creation AFTER INSERT ON jobs
+                BEGIN
+                    INSERT INTO job_events(job_id,status,stage,at) VALUES(new.id,new.status,new.stage,new.updated);
+                END;
+                CREATE TRIGGER IF NOT EXISTS log_job_progress AFTER UPDATE OF status,stage ON jobs
+                WHEN old.stage IS NOT new.stage OR (
+                    old.status IS NOT new.status AND NOT (
+                        old.status='pending' AND new.status='working'
+                    )
+                )
+                BEGIN
+                    INSERT INTO job_events(job_id,status,stage,at)
+                    VALUES(new.id,new.status,new.stage,new.updated);
+                END;
                 CREATE TABLE IF NOT EXISTS runtime(id INTEGER PRIMARY KEY CHECK(id=1), heartbeat REAL);
                 CREATE TABLE IF NOT EXISTS attempts(ip TEXT PRIMARY KEY, count INTEGER, since REAL);
                 CREATE TABLE IF NOT EXISTS preferences(name TEXT PRIMARY KEY, value TEXT);
@@ -68,12 +86,18 @@ class Store:
         with self.db() as db:
             db.execute('UPDATE jobs SET ' + ','.join(k+'=?' for k in fields) + ' WHERE id=?', [*fields.values(), job_id])
 
-    def job(self, job_id):
+    def job(self, job_id, *, history=False):
         with self.db() as db:
+            if history:
+                db.execute('BEGIN')
             row = db.execute('SELECT j.*,p.name FROM jobs j JOIN projects p ON j.project=p.id WHERE j.id=? AND p.deleted=0', (job_id,)).fetchone()
-        if not row:
-            raise LookupError('任务不存在')
-        result = dict(row)
+            if not row:
+                raise LookupError('任务不存在')
+            result = dict(row)
+            if history:
+                result['events'] = [dict(event) for event in db.execute(
+                    'SELECT status,stage,at FROM job_events WHERE job_id=? ORDER BY seq', (job_id,)
+                )]
         for key in ('images', 'plan', 'report', 'usage', 'cad_health'):
             result[key] = json.loads(result[key]) if result[key] else ([] if key in ('images','usage') else None)
         result.pop('config', None)
@@ -100,11 +124,23 @@ class Store:
             first=db.execute('SELECT id FROM providers ORDER BY rowid LIMIT 1').fetchone()
             return first[0] if first else None
 
+    @staticmethod
+    def request_key(request_id, prompt, provider, images, parent, demo):
+        payload = json.dumps([prompt, provider, images, parent, demo], sort_keys=True).encode()
+        return request_id + ':' + hashlib.sha256(payload).hexdigest()
+
+    def submitted_job(self, request_id, prompt, provider, images, parent, demo):
+        if not request_id:
+            return None
+        key = self.request_key(request_id, prompt, provider, images, parent, demo)
+        with self.db() as db:
+            row = db.execute('SELECT id FROM jobs WHERE request_id=?', (key,)).fetchone()
+        return row['id'] if row else None
+
     def submit(self, prompt, provider, images, parent=None, demo=False, request_id=None):
         job_id = str(uuid.uuid4())
+        idem = self.request_key(request_id or job_id, prompt, provider, images, parent, demo)
         config = self.provider(provider, True) if not demo else {}
-        digest = hashlib.sha256(json.dumps([prompt,provider,images,parent,demo],sort_keys=True).encode()).hexdigest()
-        idem = (request_id or job_id) + ':' + digest
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             old = db.execute('SELECT id FROM jobs WHERE request_id=?', (idem,)).fetchone()
@@ -123,9 +159,10 @@ class Store:
                 db.execute('INSERT INTO projects(id,name,created) VALUES(?,?,?)', (project, '固定零件测试' if demo else prompt[:32], time.time()))
             # Snapshot encrypted credentials so changing a provider cannot change a running job.
             snapshot = self.cipher.encrypt(json.dumps(config).encode()).decode()
+            now = time.time()
             db.execute('''INSERT INTO jobs(id,project,version,parent,provider,prompt,images,status,stage,created,updated,request_id,config)
                 VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?)''',
-                (job_id,project,version,parent,provider,prompt,json.dumps(images),'demo' if demo else 'pending',time.time(),time.time(),idem,snapshot))
+                (job_id,project,version,parent,provider,prompt,json.dumps(images),'demo' if demo else 'pending',now,now,idem,snapshot))
         return job_id
 
     def safe_error(self, message):

@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             browser=p.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL') or None,headless=True)
             context=browser.new_context(viewport={'width':390,'height':844},accept_downloads=True)
             page=context.new_page();errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
-            page.goto(origin);page.locator('[name=password]').fill('admin');page.locator('#login-form button').click();expect(page.locator('#main h1')).to_have_text('创建模型')
+            page.goto(origin);page.locator('[name=password]').fill('admin');page.locator('#login-form button').click();expect(page.locator('.user-message')).to_contain_text('失败页面验证')
             page.goto(origin+'/#detail/'+job)
             summary=page.locator('summary').filter(has_text='高级信息')
             expect(summary).to_be_visible();summary.click();expect(page.locator('#source-code')).to_have_text(script)

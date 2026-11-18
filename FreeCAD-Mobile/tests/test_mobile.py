@@ -32,6 +32,29 @@ class MobileTests(unittest.TestCase):
         self.assertNotIn(other['id'],[r['id'] for r in rows])
         self.assertTrue(all('script' not in r and 'config' not in r for r in rows))
         self.assertEqual(self.client.get('/api/jobs',params={'project':"' OR 1=1 --"}).json(),[])
+    def test_task_history_survives_restart_and_uses_actual_transitions(self):
+        job = self.job()
+        self.store.update(job['id'], status='working', stage='building')
+        self.store.update(job['id'], position=1)
+        self.store.update(job['id'], status='review', stage='review', archived=1)
+        reopened = Store(self.temp.name)
+        events = reopened.job(job['id'], history=True)['events']
+        self.assertEqual([event['stage'] for event in events], ['demo', 'building', 'review'])
+        self.assertEqual(events[0]['at'], job['created'])
+        self.assertEqual(events, self.client.get('/api/jobs', params={'project': job['project']}).json()[0]['events'])
+        self.assertEqual(events, self.client.get('/api/jobs/' + job['id']).json()['events'])
+
+    def test_project_index_and_retry_after_provider_removal(self):
+        provider = self.provider()
+        params = dict(demo=False, provider=provider, request_id='retry-after-lost-response')
+        first = self.job(**params)
+        self.client.delete('/api/providers/' + provider)
+        self.assertEqual(self.job(**params)['id'], first['id'])
+        latest = self.job(parent=first['id'])
+        other = self.job()
+        rows = self.client.get('/api/jobs?view=projects').json()
+        self.assertEqual([row['id'] for row in rows], [other['id'], latest['id']])
+
     def provider(self):
         r=self.client.post('/api/providers',json={'name':'测试模型','url':'http://model/v1','model':'test','key':'sensitive-model-key','vision':True})
         self.assertEqual(r.status_code,200,r.text);return r.json()['id']
