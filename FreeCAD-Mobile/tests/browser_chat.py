@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
     try:
         with sync_playwright() as p:
             browser=p.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL') or None,headless=True,args=['--enable-unsafe-swiftshader'])
-            context=browser.new_context(viewport={'width':390,'height':844},accept_downloads=True)
+            context=browser.new_context(viewport={'width':390,'height':844},has_touch=True,accept_downloads=True)
             page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto(origin);page.locator('[name=password]').fill('admin');page.locator('#login-form button').click()
             expect(page.locator('#main h1')).to_have_text('新建对话');expect(page.locator('#provider')).to_have_value(provider)
@@ -56,42 +56,57 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             assert all(abs(b['height']-44)<1 for b in boxes),boxes
             assert max(b['y'] for b in boxes)-min(b['y'] for b in boxes)<1,boxes
             page.screenshot(path=str(screens/'11-chat-home-mobile.png'),full_page=True)
-            # Emulate a keyboard reducing ONLY the visual viewport (WebView behavior).
-            page.locator('#prompt').focus()
+            def write_prompt(text):
+                page.locator('#edit-prompt').click()
+                page.locator('#keyboard-prompt').fill(text)
+                page.locator('#close-keyboard').click()
+                expect(page.locator('#keyboard-editor')).not_to_be_visible()
+
+            # Emulate a keyboard reducing ONLY the visual viewport.
+            page.locator('#edit-prompt').click()
+            editor=page.locator('#keyboard-editor')
+            expect(editor).to_be_visible()
+            expect(page.locator('#keyboard-prompt')).to_be_focused()
+            expect(page.locator('#create-form')).not_to_be_visible()
+            expect(page.locator('nav')).not_to_be_visible()
             page.evaluate("""() => {
                 window.keyboardHeight=420;window.keyboardTop=0;
                 Object.defineProperty(visualViewport,'height',{configurable:true,get:()=>window.keyboardHeight});
                 Object.defineProperty(visualViewport,'offsetTop',{configurable:true,get:()=>window.keyboardTop});
                 visualViewport.dispatchEvent(new Event('resize'));
             }""")
-            expect(page.locator('body')).to_have_class(__import__('re').compile('keyboard-open'))
-            expect(page.locator('nav')).not_to_be_visible()
-            page.locator('#prompt').fill('将直径改为 100 毫米，厚度保持 5 毫米。\n'*15)
-            page.wait_for_timeout(100)
-            for selector in ['#prompt','#generate']:
-                box=page.locator(selector).bounding_box();assert box['y']>=0 and box['y']+box['height']<=421,(selector,box)
+            expect(editor).not_to_have_class(re.compile('keyboard-unmeasured'))
+            sample='将直径改为 100 毫米，厚度保持 5 毫米。\n'*15
+            page.locator('#keyboard-prompt').fill(sample)
+            entry=page.locator('.keyboard-entry')
+            box=entry.bounding_box()
+            assert abs(box['y']+box['height']-420)<2,box
             page.screenshot(path=str(screens/'17-keyboard-visual-viewport.png'))
             page.evaluate("window.keyboardTop=35;visualViewport.dispatchEvent(new Event('scroll'))")
-            page.wait_for_timeout(100)
-            box=page.locator('#prompt').bounding_box();assert box['y']>=35 and box['y']+box['height']<=456,box
+            page.wait_for_function("Math.abs(document.querySelector('.keyboard-entry').getBoundingClientRect().bottom-455)<2")
             page.evaluate("delete visualViewport.height;delete visualViewport.offsetTop;visualViewport.dispatchEvent(new Event('resize'))")
-            page.locator('#prompt').blur()
+            expect(editor).not_to_be_visible()
             expect(page.locator('nav')).to_be_visible()
-            # Standalone hosts that overlay a keyboard but report NO size change.
-            page.locator('#prompt').focus()
-            expect(page.locator('body')).to_have_class(__import__('re').compile('keyboard-fallback'))
-            box=page.locator('#prompt').bounding_box();assert box['y']<200 and box['y']+box['height']<360,box
+            expect(page.locator('#prompt')).to_have_value(sample)
+
+            # Some WebViews overlay the keyboard without exposing any geometry.
+            page.locator('#edit-prompt').tap()
+            expect(editor).to_have_class(re.compile('keyboard-unmeasured'))
+            expect(page.locator('#keyboard-prompt')).to_have_value(sample)
+            box=entry.bounding_box()
+            assert 390<box['y']+box['height']<490,box
             expect(page.locator('header')).to_be_visible()
             expect(page.locator('nav')).not_to_be_visible()
             page.screenshot(path=str(screens/'18-keyboard-no-resize-fallback.png'))
-            page.locator('#prompt').blur()
-            expect(page.locator('body')).not_to_have_class(__import__('re').compile('keyboard-fallback'))
+            page.locator('#close-keyboard').tap()
+            expect(editor).not_to_be_visible()
             expect(page.locator('nav')).to_be_visible()
-            page.locator('#prompt').fill('创建 60×30×5 mm 矩形板，中心开直径 6 mm 的孔。')
+            expect(page.locator('#edit-prompt')).to_contain_text('将直径改为')
+
+            write_prompt('创建 60×30×5 mm 矩形板，中心开直径 6 mm 的孔。')
             image=io.BytesIO();Image.new('RGB',(30,30),'white').save(image,'PNG')
             page.locator('#image-input').set_input_files({'name':'reference.png','mimeType':'image/png','buffer':image.getvalue()})
             expect(page.locator('#images img')).to_have_count(1)
-            page.locator('#prompt').blur()
             page.locator('[data-nav=settings]').click()
             expect(page.locator('#add-provider')).to_be_visible()
             page.locator('[data-nav=conversation]').click()
@@ -101,23 +116,31 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             expect(page.locator('.user-message img')).to_have_count(1);expect(page.locator('#generate')).to_be_disabled()
             store.update(job,status='working',stage='cad_queued',position=2)
             expect(page.locator('.thinking')).to_contain_text('等待 FreeCAD 建模',timeout=15000)
-            page.locator('#prompt').fill('将厚度改为 8 mm')
+            cancel=page.locator('.thinking [data-cancel]')
+            expect(cancel).to_be_visible()
+            assert cancel.evaluate('el=>getComputedStyle(el).color')=='rgb(255, 150, 147)'
+            status_box=page.locator('.thinking strong').bounding_box()
+            cancel_box=cancel.bounding_box()
+            assert cancel_box['x']>=status_box['x']+status_box['width']
+            assert abs(cancel_box['y']+cancel_box['height']/2-status_box['y']-status_box['height']/2)<2
+            write_prompt('将厚度改为 8 mm')
             store.update(job,stage='building');expect(page.locator('.thinking')).to_contain_text('正在建模',timeout=15000)
             expect(page.locator('#prompt')).to_have_value('将厚度改为 8 mm')
             page.screenshot(path=str(screens/'12-chat-progress-mobile.png'),full_page=True)
             store.update(job,stage='archiving')
             finish(job);expect(page.locator('.model-thumbnail img')).to_be_visible(timeout=30000)
-            page.locator('#prompt').blur()
             expect(page.locator('nav')).to_be_visible()
             record=page.locator(f'[data-record="{job}"]')
             expect(record).not_to_have_attribute('open','')
-            record.locator('summary').click()
+            card=record.bounding_box()
+            summary=record.locator('summary').bounding_box()
+            assert abs(card['width']-summary['width'])<=2, (card,summary)
+            page.mouse.click(card['x']+3,summary['y']+summary['height']/2)
             expect(record).to_have_attribute('open','')
             expect(record.locator('ol')).to_contain_text('进入 FreeCAD 队列')
             expect(record.locator('ol')).to_contain_text('建模与检查')
             expect(record.locator('ol')).to_contain_text('保存模型文件')
             expect(record.locator('time')).to_have_count(5)
-            page.locator('#prompt').blur()
             page.locator('[data-nav=settings]').click()
             expect(page.locator('#add-provider')).to_be_visible()
             page.locator('[data-nav=conversation]').click()
@@ -143,10 +166,19 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             expect(page.locator('.user-message')).to_have_count(2);expect(page.locator('.user-message').last).to_have_text('将厚度改为 8 mm')
             store.update(second['id'],status='needs_input',stage='needs_input',plan=json.dumps({'questions':['孔径保持 6 mm 吗？'],'measurement':{'parameters':[{'name':'孔径','value':'','source':'unknown','required':True,'measurement_hint':'用卡尺内测量爪测量孔的内径'}],'issues':[]}}))
             expect(page.locator('.assistant-message').last).to_contain_text('孔径保持',timeout=15000)
+            turn=page.locator('.chat-turn').last.bounding_box()
+            user=page.locator('.user-message').last.bounding_box()
+            assistant=page.locator('.assistant-message').last.bounding_box()
+            assert abs(user['x']+user['width']-turn['x']-turn['width'])<2
+            assert abs(assistant['x']-turn['x'])<2
+            assert user['x']>assistant['x']
             page.reload();expect(page.locator('.user-message')).to_have_count(2)
             expect(page.locator('.measurement-tip')).to_contain_text('卡尺')
-            page.locator('#prompt').fill('孔径保持6mm，厚度改为8mm')
-            with page.expect_response(lambda r:r.url==origin+'/api/jobs' and r.request.method=='POST') as response:page.locator('#generate').click()
+            page.locator('#edit-prompt').click()
+            page.locator('#keyboard-prompt').fill('孔径保持6mm，厚度改为8mm')
+            with page.expect_response(lambda r:r.url==origin+'/api/jobs' and r.request.method=='POST') as response:
+                page.locator('#keyboard-send').click()
+            expect(page.locator('#keyboard-editor')).not_to_be_visible()
             third=response.value.json()
             plan={'summary':'尺寸已整理','questions':[],'assumptions':['中心孔贯通'],
                   'measurement':{'parameters':[{'name':'板厚','value':'8 mm','source':'user','required':True},
@@ -182,7 +214,6 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             # Explicit New survives tab switches. Recent restores the previous project.
             page.locator('.chat-new').click()
             expect(page.locator('.chat-heading h1')).to_have_text('新建对话')
-            page.locator('#prompt').blur()
             page.locator('[data-nav=settings]').click()
             expect(page.locator('#add-provider')).to_be_visible()
             page.locator('[data-nav=conversation]').click()
@@ -204,8 +235,9 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
                 route.abort()
             endpoint=origin+'/api/jobs'
             page.route(endpoint,lambda route:lose_response(route) if route.request.method=='POST' else route.continue_())
-            page.locator('#prompt').fill('测试断线恢复：建立一个 20 mm 立方体')
-            page.locator('#generate').click()
+            page.locator('#edit-prompt').click()
+            page.locator('#keyboard-prompt').fill('测试断线恢复：建立一个 20 mm 立方体')
+            page.locator('#keyboard-send').click()
             offline=page.locator('.connection-card')
             expect(offline).to_contain_text('暂时无法确认消息是否送达')
             expect(offline).to_contain_text('Caddy')
@@ -240,10 +272,10 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             page.locator('.task-record summary').click()
             expect(page.locator('.task-record li').last).to_contain_text('任务已取消')
             page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            page.goto(origin+'/#settings');page.locator('#settings-connection > summary').click();expect(page.locator('#client-version')).to_contain_text('0.5.0');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
+            page.goto(origin+'/#settings');page.locator('#settings-connection > summary').click();expect(page.locator('#client-version')).to_contain_text('0.5.1');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
             expect(page.locator('body')).not_to_have_class(__import__('re').compile('chat-viewport'))
             assert not errors,errors
             browser.close()
-        print('PASS chat: home, upload, submit, live phases, draft preservation, true STL thumbnail, modal, projections, confirm/download, refresh, versions, questions, cancel, mobile/desktop, settings, conversation resume, timeline, offline and idempotent retry')
+        print('PASS chat: home, upload, submit, live phases, draft preservation, true STL thumbnail, modal, projections, confirm/download, refresh, versions, questions, cancel, mobile/desktop, settings, conversation resume, timeline, offline and idempotent retry, separate mobile editing, message alignment, whole-row disclosure')
     finally:
         client.close();server.should_exit=True;thread.join(timeout=10)

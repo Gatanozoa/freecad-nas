@@ -1,5 +1,5 @@
 // Cache the shell only. Private API responses, models, keys and uploads never enter Cache Storage.
-const CACHE='zaowu-shell-v12';
+const CACHE='zaowu-shell-v13';
 const SHELL=['/','/static/style.css','/static/theme.css','/static/app.js','/static/chat.js','/static/chat-ui.js','/static/preview.js','/static/measurement-ui.js','/static/viewport.js','/static/provider-ui.js','/static/viewer.js','/static/vendor/three.module.js','/static/vendor/three.core.js','/static/vendor/STLLoader.js','/static/vendor/OrbitControls.js'];
 for(const name of ['attach','collapse','connection-warning','expand','new-conversation','retry-muted','retry','send','step-complete'])SHELL.push('/static/icons/'+name+'.svg');
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL.map(url=>new Request(url,{cache:'reload'}))))));

@@ -1,7 +1,7 @@
-import {measurementCard} from './measurement-ui.js?v=0.5.0';
-import {trackChatViewport} from './viewport.js?v=0.5.0';
-import {connectionCard, icon, taskRecord} from './chat-ui.js?v=0.5.0';
-import {createPreview} from './preview.js?v=0.5.0';
+import {measurementCard} from './measurement-ui.js?v=0.5.1';
+import {trackChatViewport} from './viewport.js?v=0.5.1';
+import {connectionCard, icon, taskRecord} from './chat-ui.js?v=0.5.1';
+import {createPreview} from './preview.js?v=0.5.1';
 // Conversation state is reconstructed from saved project versions, not browser-only messages.
 const thumbnailCache=new Map(); // In-memory only; private model images never enter persistent caches.
 export async function loadThumbnail(job,target,current){
@@ -9,7 +9,7 @@ export async function loadThumbnail(job,target,current){
   try{
     let url=thumbnailCache.get(job.id);
     if(!url){
-      const {mountViewer}=await import('./viewer.js?v=0.5.0');
+      const {mountViewer}=await import('./viewer.js?v=0.5.1');
       if(!current())return;
       const staging=document.createElement('div');
       staging.className='thumbnail-stage';
@@ -55,15 +55,67 @@ export function chatScreen({latest, recent, providers, isCurrent, remember, onSu
     <div class="composer-dock"><form id="create-form" class="composer">
       <div id="images" class="images" hidden></div>
       <label class="sr-only" for="prompt">描述结构与尺寸</label>
-      <textarea id="prompt" required maxlength="12000" rows="2" placeholder="描述结构与尺寸，或添加参考图…">${esc(draft.prompt||'')}</textarea>
+      <textarea id="prompt" maxlength="12000" rows="2" placeholder="描述结构与尺寸，或添加参考图…">${esc(draft.prompt||'')}</textarea>
+      <button type="button" id="edit-prompt" class="composer-prompt-trigger" aria-label="编辑建模需求" aria-haspopup="dialog"><span></span></button>
       <div class="composer-tools"><button type="button" id="attach" class="icon-button" aria-label="添加文件或图片" title="添加 JPG、PNG 或 WebP 参考图">${icon('attach')}</button>
         <input id="image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
         <label class="sr-only" for="provider">本次使用的模型</label><select id="provider">${options(draft.provider||latest?.provider||providers.find(p=>p.is_default)?.id)}</select>
         <button class="primary send-button" id="generate" aria-label="发送建模需求" title="发送">${icon('send')}</button></div>
     </form><div class="composer-shortcuts"><button id="demo" class="quiet">运行固定零件测试</button><span id="composer-note" class="field-note"></span></div></div>
-  </section><aside class="chat-sidebar" aria-label="本次建模" hidden></aside>`;
+  </section><aside class="chat-sidebar" aria-label="本次建模" hidden></aside>
+  <div id="keyboard-editor" class="keyboard-editor" role="dialog" aria-modal="true" aria-label="编辑建模需求" hidden>
+    <div class="keyboard-entry">
+      <button type="button" id="close-keyboard" aria-label="收起输入栏" title="收起输入栏">${icon('expand')}</button>
+      <textarea id="keyboard-prompt" rows="1" maxlength="12000" aria-label="描述结构与尺寸" placeholder="描述结构与尺寸…"></textarea>
+      <button type="button" class="primary send-button" id="keyboard-send" aria-label="发送建模需求" title="发送">${icon('send')}</button>
+    </div>
+  </div>`;
   const $=s=>host.querySelector(s), messages=$('#messages'), turns=$('#chat-turns'), feedback=$('#chat-feedback');
+  const editor=$('#keyboard-editor'), keyboardInput=$('#keyboard-prompt'), prompt=$('#prompt'), trigger=$('#edit-prompt');
+  const shell=host.closest('#shell');
+  const editorBackground=[$('.chat-shell'),shell.querySelector('header'),shell.querySelector('nav')];
+  let editorScroll;
   function scrollToEnd(){messages.scrollTop=messages.scrollHeight}
+  function setEditorVisibility(open){
+    editor.hidden=!open;
+    for(const node of editorBackground)node.inert=open;
+    viewport.schedule();
+  }
+  function openEditor(){
+    if(prompt.readOnly)return;
+    if(!matchMedia('(max-width:800px)').matches){prompt.focus();return}
+    if(!editor.hidden){keyboardInput.focus();return}
+    editorScroll={top:messages.scrollTop,atEnd:messages.scrollTop+messages.clientHeight>=messages.scrollHeight-24};
+    keyboardInput.value=prompt.value;
+    editor.classList.add('keyboard-unmeasured');
+    setEditorVisibility(true);
+    resizeInput(keyboardInput);
+    keyboardInput.focus({preventScroll:true});
+    keyboardInput.setSelectionRange(keyboardInput.value.length,keyboardInput.value.length);
+  }
+  function closeEditor(restoreFocus=true){
+    if(editor.hidden)return;
+    setEditorVisibility(false);
+    if(!restoreFocus)return;
+    if(matchMedia('(max-width:800px)').matches)trigger.focus({preventScroll:true});
+    if(editorScroll.atEnd)scrollToEnd();else messages.scrollTop=editorScroll.top;
+  }
+  const viewport=trackChatViewport(editor,closeEditor);
+  trigger.onclick=openEditor;
+  $('#close-keyboard').onclick=()=>closeEditor();
+  editor.onpointerdown=e=>{if(e.target===editor||e.target.closest('button'))e.preventDefault()};
+  editor.onclick=e=>{if(e.target===editor)closeEditor()};
+  editor.onfocusout=e=>{
+    if(!editor.hidden&&!editor.contains(e.relatedTarget))closeEditor();
+  };
+  editor.onkeydown=e=>{
+    if(e.key==='Escape'&&!e.isComposing){e.preventDefault();closeEditor()}
+    if(e.key==='Tab'){
+      const buttons=[...editor.querySelectorAll('button:not(:disabled), textarea')];
+      const end=e.shiftKey?buttons[0]:buttons.at(-1);
+      if(document.activeElement===end){e.preventDefault();(e.shiftKey?buttons.at(-1):buttons[0]).focus()}
+    }
+  };
   function clearFeedback(){feedback.hidden=true;feedback.replaceChildren()}
   function showFailure(message,retry=refresh){
     if(!alive())return;
@@ -86,26 +138,55 @@ export function chatScreen({latest, recent, providers, isCurrent, remember, onSu
     scrollToEnd();
   }
   const preview=createPreview({
-    isCurrent:alive,post,toast,esc,download,onContinue:()=>$('#prompt').focus(),
+    isCurrent:alive,post,toast,esc,download,onContinue:openEditor,
     onConfirmed:refresh,onConnectionError:showFailure,
   });
   function newId(){return globalThis.crypto?.randomUUID?.()||Date.now()+'-'+Math.random()}
   function persist(){
     try{localStorage.setItem(draftKey,JSON.stringify({prompt:$('#prompt').value,provider:$('#provider').value,images,pending}))}catch{}
   }
-  function resizeInput(){const el=$('#prompt');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,180)+'px'}
+  function resizeInput(input){
+    if(!input.offsetWidth){input.style.removeProperty('height');return}
+    input.style.height='auto';
+    input.style.height=input.scrollHeight+'px';
+  }
+  function updatePrompt(){
+    trigger.firstElementChild.textContent=prompt.value||prompt.placeholder;
+    trigger.classList.toggle('placeholder',!prompt.value);
+    resizeInput(prompt);
+  }
   function controls(){
     const busy=!!latest&&active(latest);
     $('#generate').disabled=!initialized||busy||uploading||sending||!!pending;
     $('#demo').disabled=!initialized||busy||uploading||sending||!!pending;
     $('#attach').disabled=uploading||sending||!!pending;
-    $('#prompt').readOnly=sending||!!pending;
+    prompt.readOnly=sending||!!pending;
+    keyboardInput.readOnly=prompt.readOnly;
+    trigger.disabled=prompt.readOnly;
+    $('#keyboard-send').disabled=$('#generate').disabled;
     $('#provider').disabled=sending||!!pending;
     $('#images').querySelectorAll('button').forEach(button=>button.disabled=sending||!!pending);
     $('#composer-note').textContent=uploading?'正在上传…':busy?'任务进行中，可以先填写下一步需求':!providers.length?'请到设置添加模型，或先运行固定测试':'';
   }
-  $('#prompt').oninput=()=>{resizeInput();persist()};$('#provider').onchange=persist;
-  $('#prompt').onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)&&!e.isComposing){e.preventDefault();if(!$('#generate').disabled)$('#create-form').requestSubmit()}};
+  prompt.oninput=()=>{updatePrompt();persist()};
+  keyboardInput.oninput=()=>{
+    prompt.value=keyboardInput.value;
+    updatePrompt();
+    resizeInput(keyboardInput);
+    persist();
+  };
+  $('#provider').onchange=persist;
+  function submitFromKeyboard(){
+    if(!$('#generate').disabled)submit(false);
+  }
+  function submitShortcut(e){
+    if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)&&!e.isComposing){
+      e.preventDefault();
+      submitFromKeyboard();
+    }
+  }
+  prompt.onkeydown=keyboardInput.onkeydown=submitShortcut;
+  $('#keyboard-send').onclick=submitFromKeyboard;
   $('#attach').onclick=()=>$('#image-input').click();
   $('#image-input').onchange=async e=>{
     uploading=true;controls();
@@ -170,15 +251,19 @@ export function chatScreen({latest, recent, providers, isCurrent, remember, onSu
     if(!demo&&!provider)return toast('请到设置中添加模型，然后在下拉框中选择');
     const prompt=demo?'创建长60mm、宽30mm、厚5mm的矩形板，中心直径6mm贯穿孔':(latest?'原需求：'+latest.prompt+'\n本次补充或修改：\n':'')+text;
     pending={prompt,provider,images:demo?[]:[...images],parent:demo?null:latest?.id,demo,request_id:newId()};
+    closeEditor();
     persist();
     retrySubmission();
   }
   $('#create-form').onsubmit=e=>{e.preventDefault();submit(false)};$('#demo').onclick=()=>submit(true);
   function userText(job){const marker='\n本次补充或修改：\n';return job.parent&&job.prompt.includes(marker)?job.prompt.split(marker).pop():job.prompt}
   function response(job){
-    if(active(job))return `<div class="thinking" role="status"><span class="activity-dot"></span><strong>${esc(job.status==='cancelling'?'正在停止任务':stages[job.stage]||'等待处理')}</strong></div>
+    if(active(job))return `<div class="thinking">
+      <span class="activity-dot" aria-hidden="true"></span><strong role="status">${esc(job.status==='cancelling'?'正在停止任务':stages[job.stage]||'等待处理')}</strong>
+      ${job.status==='cancelling'?'':`<button type="button" class="cancel-task" data-cancel="${job.id}">取消任务</button>`}
+    </div>
       ${job.stage==='cad_unavailable'?`<p class="notice error">${esc(job.cad_health?.message||'FreeCAD 执行端暂未就绪，恢复后会继续。')}</p>`:''}
-      ${job.position?`<p class="field-note">前方 ${Math.max(0,job.position-1)} 个任务</p>`:''}<button class="quiet" data-cancel="${job.id}">取消任务</button>`;
+      ${job.position?`<p class="field-note">前方 ${Math.max(0,job.position-1)} 个任务</p>`:''}`;
     if(job.archived)return `<button class="model-message" data-preview="${job.id}" aria-label="打开第 ${job.version} 版三维预览">
       <span class="model-thumbnail" data-thumb="${job.id}"><span>加载中</span></span>
       <span class="model-caption"><strong>${job.status==='confirmed'?'模型已确认':'模型已生成'} · 第 ${job.version} 版</strong>
@@ -247,13 +332,12 @@ export function chatScreen({latest, recent, providers, isCurrent, remember, onSu
       else toast(error.message);
     }finally{button.disabled=false}
   }
-  const stopViewport=trackChatViewport(host);
-  resizeInput();renderImages();controls();
+  updatePrompt();renderImages();controls();
   if(pending)showFailure('暂时无法确认消息是否送达。你的内容已保留。',retrySubmission);
   refresh();
   return ()=>{
     if(signature)chatPositions.set(scope,{expanded:new Set([...turns.querySelectorAll('[data-record][open]')].map(node=>node.dataset.record)),scrollTop:messages.scrollTop,atEnd:messages.scrollTop+messages.clientHeight>=messages.scrollHeight-24});
-    stopViewport();disposed=true;clearTimeout(timer);++thumbEpoch;preview.close();
+    closeEditor(false);viewport.dispose();disposed=true;clearTimeout(timer);++thumbEpoch;preview.close();
     host.classList.remove('chat-page','chat-home');
   };
 }
