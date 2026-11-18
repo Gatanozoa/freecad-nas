@@ -135,12 +135,27 @@ class MobileTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/jobs/'+j['id']).status_code,404)
     def test_no_unsafe_cleanup(self):
         with self.assertRaises(ValueError):worker.remove_directory(self.store.root,'../other')
-    def test_archive_download_does_not_need_cad(self):
-        j=self.job();folder=self.store.root/'files'/j['id'];folder.mkdir();(folder/'model.stl').write_bytes(b'archived')
-        self.store.update(j['id'],status='confirmed',archived=1)
-        with patch.dict(os.environ,{'CAD_URL':'http://unreachable.invalid/mcp'}):
-            response=self.client.get('/api/jobs/'+j['id']+'/files/model.stl')
-        self.assertEqual(response.content,b'archived')
+    def test_archive_download_needs_neither_confirmation_nor_cad(self):
+        job = self.job()
+        path = f"/api/jobs/{job['id']}/files/"
+        folder = self.store.root/'files'/job['id']
+        folder.mkdir()
+        for name in ('model.stl', 'model.step', 'model.FCStd'):
+            (folder/name).write_bytes(name.encode())
+            response = self.client.get(path+name)
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.json()['code'], 'NOT_ARCHIVED')
+        for status in ('review', 'confirmed'):
+            self.store.update(job['id'], status=status, archived=1)
+            with patch.dict(os.environ, {'CAD_URL':'http://unreachable.invalid/mcp'}):
+                for name in ('model.stl', 'model.step', 'model.FCStd'):
+                    response = self.client.get(path+name)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.content, name.encode())
+            self.assertEqual(self.store.job(job['id'])['status'], status)
+        with TestClient(create_app(self.store)) as other:
+            self.assertEqual(other.get(path+'model.step').status_code, 401)
+
     def test_cancel_during_generation(self):
         pid=self.provider();j=self.job(demo=False,provider=pid)
         async def slow(*args):

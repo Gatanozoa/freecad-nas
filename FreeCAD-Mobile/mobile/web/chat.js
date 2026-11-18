@@ -1,7 +1,7 @@
-import {measurementCard} from './measurement-ui.js?v=0.5.2';
-import {trackChatViewport} from './viewport.js?v=0.5.2';
-import {connectionCard, icon, taskRecord} from './chat-ui.js?v=0.5.2';
-import {createPreview} from './preview.js?v=0.5.2';
+import {measurementCard} from './measurement-ui.js?v=0.5.3';
+import {trackChatViewport} from './viewport.js?v=0.5.3';
+import {connectionCard, icon, taskRecord} from './chat-ui.js?v=0.5.3';
+import {createPreview} from './preview.js?v=0.5.3';
 // Conversation state is reconstructed from saved project versions, not browser-only messages.
 const thumbnailCache=new Map(); // In-memory only; private model images never enter persistent caches.
 export async function loadThumbnail(job,target,current){
@@ -9,7 +9,7 @@ export async function loadThumbnail(job,target,current){
   try{
     let url=thumbnailCache.get(job.id);
     if(!url){
-      const {mountViewer}=await import('./viewer.js?v=0.5.2');
+      const {mountViewer}=await import('./viewer.js?v=0.5.3');
       if(!current())return;
       const staging=document.createElement('div');
       staging.className='thumbnail-stage';
@@ -137,10 +137,7 @@ export function chatScreen({latest, recent, providers, isCurrent, remember, onSu
     connectionCard(target,message,retry);
     scrollToEnd();
   }
-  const preview=createPreview({
-    isCurrent:alive,post,toast,esc,download,onContinue:openEditor,
-    onConfirmed:refresh,onConnectionError:showFailure,
-  });
+  const preview=createPreview({isCurrent:alive,toast,esc,download,onContinue:openEditor});
   function newId(){return globalThis.crypto?.randomUUID?.()||Date.now()+'-'+Math.random()}
   function persist(){
     try{localStorage.setItem(draftKey,JSON.stringify({prompt:$('#prompt').value,provider:$('#provider').value,images,pending}))}catch{}
@@ -266,8 +263,8 @@ export function chatScreen({latest, recent, providers, isCurrent, remember, onSu
       ${job.position?`<p class="field-note">前方 ${Math.max(0,job.position-1)} 个任务</p>`:''}`;
     if(job.archived)return `<button class="model-message" data-preview="${job.id}" aria-label="打开第 ${job.version} 版三维预览">
       <span class="model-thumbnail" data-thumb="${job.id}"><span>加载中</span></span>
-      <span class="model-caption"><strong>${job.status==='confirmed'?'模型已确认':'模型已生成'} · 第 ${job.version} 版</strong>
-      <span class="preview-link">${job.report?.dimensions?esc(job.report.dimensions.map(v=>Number(v.toFixed(2))).join(' × '))+' mm · ':''}${job.status==='confirmed'?'查看与下载':'打开三维预览'}</span></span></button>`;
+      <span class="model-caption"><strong>模型已生成 · 第 ${job.version} 版</strong>
+      <span class="preview-link">${job.report?.dimensions?esc(job.report.dimensions.map(v=>Number(v.toFixed(2))).join(' × '))+' mm · ':''}查看与下载</span></span></button>`;
     if(['needs_input','needs_confirmation'].includes(job.status))return measurementCard(job,esc,job.id===latest?.id);
     return `<p>${job.status==='cancelled'?'任务已取消。':job.status==='interrupted'?'任务已中断，请重新发送需求。':'本次生成未完成，可以修改需求后重试。'}</p>${job.error?`<details><summary>查看错误原因</summary><pre>${esc(job.error)}</pre></details>`:''}`;
   }
@@ -305,6 +302,7 @@ export function chatScreen({latest, recent, providers, isCurrent, remember, onSu
         host.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>preview.open(jobs.find(j=>j.id===b.dataset.preview)));
         turns.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>jobAction(b,b.dataset.cancel,'cancel'));
         thumbnails(jobs,++thumbEpoch).catch(()=>{});
+        if(firstRender)preview.restore(jobs);
         if(firstRender&&previous&&!previous.atEnd)messages.scrollTop=previous.scrollTop;
         else if(nearBottom&&jobs.length)scrollToEnd();
       }
@@ -337,7 +335,7 @@ export function chatScreen({latest, recent, providers, isCurrent, remember, onSu
   refresh();
   return ()=>{
     if(signature)chatPositions.set(scope,{expanded:new Set([...turns.querySelectorAll('[data-record][open]')].map(node=>node.dataset.record)),scrollTop:messages.scrollTop,atEnd:messages.scrollTop+messages.clientHeight>=messages.scrollHeight-24});
-    closeEditor(false);viewport.dispose();disposed=true;clearTimeout(timer);++thumbEpoch;preview.close();
+    closeEditor(false);viewport.dispose();disposed=true;clearTimeout(timer);++thumbEpoch;preview.dispose();
     host.classList.remove('chat-page','chat-home');
   };
 }

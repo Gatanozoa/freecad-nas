@@ -4,7 +4,6 @@ import io
 import json
 import os
 import re
-import shutil
 import socket
 import tempfile
 import threading
@@ -35,8 +34,12 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
     payload=b'Browser fixture'.ljust(80,b'\0')+struct.pack('<I',len(faces))
     for a,b,c in faces:payload+=struct.pack('<12fH',0,0,0,*vertices[a],*vertices[b],*vertices[c],0)
     fixture.write_bytes(payload)
+    model_files={'model.stl':fixture.read_bytes(),'model.step':b'STEP fixture','model.FCStd':b'FCStd fixture'}
     def finish(job):
-        target=store.root/'files'/job;target.mkdir(parents=True,exist_ok=True);shutil.copy(fixture,target/'model.stl')
+        target=store.root/'files'/job
+        target.mkdir(parents=True,exist_ok=True)
+        for name,data in model_files.items():
+            (target/name).write_bytes(data)
         store.update(job,status='review',stage='review',archived=1,report=json.dumps({'dimensions':[60,30,5]}),plan=json.dumps({'summary':'带中心贯穿孔的矩形板','assumptions':['单位为毫米']}))
     server=uvicorn.Server(uvicorn.Config(app,log_level='critical',access_log=False))
     thread=threading.Thread(target=lambda:server.run(sockets=[sock]),daemon=True);thread.start()
@@ -155,10 +158,39 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             expect(page.locator('#preview-dialog[open]')).to_have_count(1)
             page.screenshot(path=str(screens/'16-dark-projections-mobile.png'),full_page=True)
             page.locator('#preview-model').click();page.screenshot(path=str(screens/'14-chat-preview-mobile.png'),full_page=True)
-            page.locator('#confirm-model').click();expect(page.locator('[data-download="model.stl"]')).to_be_visible()
-            with page.expect_download() as dl:page.locator('[data-download="model.stl"]').click()
-            assert Path(dl.value.path()).read_bytes()==fixture.read_bytes()
-            page.keyboard.press('Escape');expect(page.locator('#preview-dialog')).not_to_be_visible()
+            dialog=page.locator('#preview-dialog')
+            expect(dialog.locator('#confirm-model')).to_have_count(0)
+            for name,data in model_files.items():
+                button=dialog.locator(f'[data-download="{name}"]')
+                expect(button).to_be_visible()
+                with page.expect_download() as dl:
+                    button.click()
+                assert dl.value.suggested_filename==name
+                assert Path(dl.value.path()).read_bytes()==data
+            assert store.job(job)['status']=='review'
+
+            # Browser Back dismisses the preview while keeping the current conversation and draft.
+            conversation=page.url
+            page.go_back()
+            expect(dialog).not_to_be_visible()
+            expect(page).to_have_url(conversation)
+            expect(page.locator('#prompt')).to_have_value('将厚度改为 8 mm')
+            page.go_forward()
+            expect(dialog).to_be_visible()
+            dialog.locator('[data-close-preview]').click()
+            expect(dialog).not_to_be_visible()
+            page.go_back()
+            expect(page).to_have_url(origin+'/#settings')
+            page.go_forward()
+            expect(page).to_have_url(conversation)
+
+            page.locator('[data-preview]').click()
+            page.reload()
+            expect(dialog).to_be_visible()
+            dialog.locator('#continue-chat').click()
+            expect(dialog).not_to_be_visible()
+            expect(page.locator('#keyboard-prompt')).to_have_value('将厚度改为 8 mm')
+            page.locator('#close-keyboard').click()
             page.reload();expect(page.locator('.model-thumbnail img')).to_be_visible(timeout=30000)
             expect(page.locator('#prompt')).to_have_value('将厚度改为 8 mm')
             with page.expect_response(lambda r:r.url==origin+'/api/jobs' and r.request.method=='POST') as response:page.locator('#generate').click()
@@ -200,6 +232,10 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
             page.locator('[data-nav=library]').click()
             expect(page.locator('.library-cards .card')).to_have_count(1)
+            page.locator('[data-filter=review]').click()
+            expect(page.locator('.library-cards .card')).to_have_count(0)
+            page.locator('[data-filter=confirmed]').click()
+            expect(page.locator('.library-cards .card')).to_have_count(1)
             page.set_viewport_size({'width':390,'height':844})
             page.screenshot(path=str(screens/'20-library-mobile.png'),full_page=True)
             page.locator('.library-cards .card').click()
@@ -208,8 +244,16 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             expect(page.locator('#preview-viewer canvas')).to_be_visible(timeout=30000)
             page.locator('#preview-drawings').click()
             expect(page.locator('#preview-projections img')).to_have_count(3)
+            detail_url=page.url
+            page.go_back()
+            expect(page.locator('#preview-dialog')).not_to_be_visible()
+            expect(page).to_have_url(detail_url)
+            expect(page.locator('#task-panel [data-download]')).to_have_count(3)
+            page.locator('#detail-preview').click()
             page.keyboard.press('Escape')
-            page.locator('[data-nav=conversation]').click()
+            expect(page.locator('#preview-dialog')).not_to_be_visible()
+            page.locator('#detail-preview').click()
+            page.locator('#continue-chat').click()
             expect(page.locator('.chat-turn')).to_have_count(3)
 
             # Explicit New survives tab switches. Recent restores the previous project.
@@ -273,10 +317,10 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             page.locator('.task-record summary').click()
             expect(page.locator('.task-record li').last).to_contain_text('任务已取消')
             page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            page.goto(origin+'/#settings');page.locator('#settings-connection > summary').click();expect(page.locator('#client-version')).to_contain_text('0.5.2');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
+            page.goto(origin+'/#settings');page.locator('#settings-connection > summary').click();expect(page.locator('#client-version')).to_contain_text('0.5.3');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
             expect(page.locator('body')).not_to_have_class(__import__('re').compile('chat-viewport'))
             assert not errors,errors
             browser.close()
-        print('PASS chat: home, upload, submit, live phases, draft preservation, true STL thumbnail, modal, projections, confirm/download, refresh, versions, questions, cancel, mobile/desktop, settings, conversation resume, timeline, offline and idempotent retry, separate mobile editing, message alignment, whole-row disclosure')
+        print('PASS chat: home, upload, submit, live phases, draft preservation, true STL thumbnail, modal, projections, direct downloads and preview history, refresh, versions, questions, cancel, mobile/desktop, settings, conversation resume, timeline, offline and idempotent retry, separate mobile editing, message alignment, whole-row disclosure')
     finally:
         client.close();server.should_exit=True;thread.join(timeout=10)

@@ -1,42 +1,153 @@
-// One preview dialog keeps the same model and controls across both tabs.
-export function createPreview({isCurrent,post,toast,esc,download,onContinue,onConfirmed,onConnectionError}){
-  const dialog=document.querySelector('#preview-dialog'), content=dialog.querySelector('.preview-content');
-  let preview=null,previewEpoch=0;
-  function closePreview(){++previewEpoch;preview?.dispose();preview=null;content.replaceChildren();dialog.close()}
-  dialog.querySelector('[data-close-preview]').onclick=closePreview;
-  dialog.oncancel=e=>{e.preventDefault();closePreview()};
-  async function openPreview(job){
-    closePreview();const epoch=++previewEpoch;
-    content.innerHTML=`<h2 id="preview-title">第 ${job.version} 版 · 模型预览</h2><div class="tabs" role="tablist" aria-label="预览方式"><button id="preview-model" role="tab" aria-selected="true" aria-controls="preview-viewer" class="selected">三维预览</button><button id="preview-drawings" role="tab" aria-selected="false" aria-controls="preview-projections" tabindex="-1">三视图</button></div><div class="viewer" id="preview-viewer"><div class="viewer-message">正在加载模型…</div></div><div class="drawings" id="preview-projections" hidden></div><p class="scroll-note">拖动旋转 · 双指缩放</p>
-      <p class="preview-dimensions">${job.report?.dimensions?esc(job.report.dimensions.map(v=>Number(v.toFixed(2))).join(" × "))+" mm":""}</p><p>${esc(job.plan?.summary||'')}</p>${job.plan?.assumptions?.length?`<div class="notice"><strong>请核对建模假设</strong><ul>${job.plan.assumptions.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></div>`:''}
-      ${job.status==='review'?'<p class="preview-instruction field-note">请核对结构与尺寸，再确认本版。</p>':''}<div class="preview-actions"></div>`;
-    dialog.showModal();previewActions(job);
-    for(const tab of content.querySelectorAll('[role=tab]'))tab.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const target=content.querySelector(e.key==='Home'?'#preview-model':e.key==='End'?'#preview-drawings':tab.id==='preview-model'?'#preview-drawings':'#preview-model');target.click();target.focus()}};
-    function selectTab(drawings){for(const tab of content.querySelectorAll('[role=tab]')){const selected=(tab.id==='preview-drawings')===drawings;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1}}
-    try{const {mountViewer}=await import('./viewer.js?v=0.5.2');if(!isCurrent()||epoch!==previewEpoch)return;
-      const v=await mountViewer(content.querySelector('#preview-viewer'),`/api/jobs/${job.id}/files/model.stl`);
-      if(!isCurrent()||epoch!==previewEpoch){v.dispose();return}preview=v;
-    }catch(e){if(epoch===previewEpoch)content.querySelector('#preview-viewer').innerHTML=`<div class="viewer-message">${esc(e.message)}<button id="retry-preview">重试预览</button></div>`;content.querySelector('#retry-preview')?.addEventListener('click',()=>openPreview(job))}
-    if(epoch!==previewEpoch)return;
-    content.querySelector('#preview-model').onclick=()=>{content.querySelector('#preview-viewer').hidden=false;content.querySelector('#preview-projections').hidden=true;content.querySelector('#preview-model').classList.add('selected');content.querySelector('#preview-drawings').classList.remove('selected');selectTab(false)};
-    content.querySelector('#preview-drawings').onclick=()=>{if(!preview)return toast('请等待模型加载完成');content.querySelector('#preview-projections').innerHTML=preview.drawings().map(d=>`<figure><img src="${d.url}" alt="${d.name}"><figcaption>${d.name}</figcaption></figure>`).join('');content.querySelector('#preview-viewer').hidden=true;content.querySelector('#preview-projections').hidden=false;content.querySelector('#preview-model').classList.remove('selected');content.querySelector('#preview-drawings').classList.add('selected');selectTab(true)};
+// A same-URL history entry lets the browser Back action close the preview first.
+const PREVIEW_ENTRY = 'zaowuPreview';
+const MODEL_FILES = [['model.stl','STL'], ['model.step','STEP'], ['model.FCStd','FCStd']];
+
+export function modelDownloadButtons(){
+  return MODEL_FILES.map(([file,label])=>`<button type="button" data-download="${file}">${label}</button>`).join('');
+}
+
+export function createPreview({isCurrent,toast,esc,download,onContinue}){
+  const dialog=document.querySelector('#preview-dialog');
+  const content=dialog.querySelector('.preview-content');
+  const closeButton=dialog.querySelector('[data-close-preview]');
+  let viewer, lastJob, epoch=0, dismissing=false, afterDismiss;
+
+  function hide(){
+    ++epoch;
+    viewer?.dispose();
+    viewer=null;
+    dialog.close();
+    content.replaceChildren();
   }
-  function previewActions(job){
-    const epoch=previewEpoch, actions=content.querySelector('.preview-actions');
-    actions.innerHTML=`<div class="actions"><button id="continue-chat">返回对话修改</button>${job.status==='review'?'<button class="primary" id="confirm-model">确认本版</button>':job.status==='confirmed'?['model.stl','model.step','model.FCStd'].map(f=>`<button data-download="${f}">${f.split('.').pop()}</button>`).join(''):''}</div>`;
-    actions.querySelector('#continue-chat').onclick=()=>{closePreview();onContinue(job)};
-    actions.querySelector('#confirm-model')?.addEventListener('click',async e=>{
-      e.target.disabled=true;
-      try{const updated=await post('jobs/'+job.id+'/confirm',{});if(isCurrent()&&epoch===previewEpoch&&dialog.open){content.querySelector('.preview-instruction')?.remove();previewActions(updated);await onConfirmed(updated)}}
-      catch(error){
-        if(isCurrent()&&error.connection&&epoch===previewEpoch){
-          closePreview();
-          onConnectionError('暂时无法获取模型确认结果。请重试连接并核对任务状态。');
-        }else if(isCurrent())toast(error.message);
-        e.target.disabled=false;
+
+  function dismiss(next){
+    if(!dialog.open||dismissing)return;
+    if(history.state?.[PREVIEW_ENTRY]===lastJob.id){
+      dismissing=true;
+      afterDismiss=next;
+      history.back();
+    }else{
+      hide();
+      next?.();
+    }
+  }
+
+  function onPopState(){
+    if(!isCurrent())return;
+    const hasEntry=lastJob&&history.state?.[PREVIEW_ENTRY]===lastJob.id;
+    if(hasEntry){
+      if(!dialog.open)show(lastJob);
+      return;
+    }
+    if(dialog.open)hide();
+    const next=afterDismiss;
+    afterDismiss=null;
+    dismissing=false;
+    next?.();
+  }
+
+  closeButton.onclick=()=>dismiss();
+  dialog.oncancel=event=>{
+    event.preventDefault();
+    dismiss();
+  };
+  window.addEventListener('popstate',onPopState);
+
+  function open(job){
+    if(!isCurrent()||!job?.archived||dialog.open)return;
+    history.pushState({...history.state,[PREVIEW_ENTRY]:job.id},'');
+    show(job);
+  }
+
+  function restore(jobs){
+    if(!isCurrent()||dialog.open)return;
+    const id=history.state?.[PREVIEW_ENTRY];
+    if(!id)return;
+    const job=jobs.find(item=>item.id===id&&item.archived);
+    if(job)show(job);
+  }
+
+  function show(job){
+    lastJob=job;
+    const generation=++epoch;
+    content.innerHTML=`
+      <h2 id="preview-title">第 ${esc(job.version)} 版 · 模型预览</h2>
+      <div class="tabs" role="tablist" aria-label="预览方式">
+        <button type="button" id="preview-model" role="tab" aria-selected="true" aria-controls="preview-viewer" class="selected">三维预览</button>
+        <button type="button" id="preview-drawings" role="tab" aria-selected="false" aria-controls="preview-projections" tabindex="-1">三视图</button>
+      </div>
+      <div class="viewer" id="preview-viewer"></div>
+      <div class="drawings" id="preview-projections" hidden></div>
+      <p class="scroll-note">拖动旋转 · 双指缩放</p>
+      ${job.report?.dimensions?`<p class="preview-dimensions">${esc(job.report.dimensions.map(v=>Number(v.toFixed(2))).join(' × '))} mm</p>`:''}
+      ${job.plan?.summary?`<p>${esc(job.plan.summary)}</p>`:''}
+      ${job.plan?.assumptions?.length?`<div class="notice"><strong>建模假设</strong><ul>${job.plan.assumptions.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></div>`:''}
+      <div class="preview-actions">
+        <div class="preview-downloads" role="group" aria-label="下载模型">${modelDownloadButtons()}</div>
+        <button type="button" id="continue-chat">返回会话修改</button>
+      </div>`;
+
+    dialog.showModal();
+    content.querySelector('#continue-chat').onclick=()=>dismiss(()=>onContinue(job));
+    for(const button of content.querySelectorAll('[data-download]')){
+      button.onclick=()=>download(job.id,button.dataset.download);
+    }
+
+    const modelTab=content.querySelector('#preview-model'), drawingsTab=content.querySelector('#preview-drawings');
+    const view=content.querySelector('#preview-viewer'), projections=content.querySelector('#preview-projections');
+    const tabs=[modelTab,drawingsTab];
+    function select(tab){
+      const drawings=tab===drawingsTab;
+      if(drawings&&!viewer){
+        toast('请等待三维模型加载完成');
+        return;
       }
-    });
-    actions.querySelectorAll('[data-download]').forEach(b=>b.onclick=()=>download(job.id,b.dataset.download));
+      if(drawings){
+        projections.innerHTML=viewer.drawings().map(d=>`<figure><img src="${d.url}" alt="${d.name}"><figcaption>${d.name}</figcaption></figure>`).join('');
+      }
+      view.hidden=drawings;
+      projections.hidden=!drawings;
+      for(const item of tabs){
+        const selected=item===tab;
+        item.classList.toggle('selected',selected);
+        item.setAttribute('aria-selected',String(selected));
+        item.tabIndex=selected?0:-1;
+      }
+    }
+    for(const tab of tabs){
+      tab.onclick=()=>select(tab);
+      tab.onkeydown=event=>{
+        if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+        event.preventDefault();
+        const target=event.key==='Home'?modelTab:event.key==='End'?drawingsTab:tabs.find(item=>item!==tab);
+        select(target);
+        target.focus();
+      };
+    }
+
+    async function load(){
+      view.innerHTML='<div class="viewer-message">正在加载模型…</div>';
+      const current=()=>isCurrent()&&generation===epoch;
+      try{
+        const {mountViewer}=await import('./viewer.js?v=0.5.3');
+        if(!current())return;
+        const loaded=await mountViewer(view,`/api/jobs/${job.id}/files/model.stl`);
+        if(current())viewer=loaded;else loaded.dispose();
+      }catch(error){
+        if(!current())return;
+        view.innerHTML=`<div class="viewer-message">${esc(error.message)}<button type="button" id="retry-preview">重试预览</button></div>`;
+        view.querySelector('#retry-preview').onclick=load;
+      }
+    }
+    load();
   }
-  return {open:openPreview,close:closePreview};
+
+  function dispose(){
+    window.removeEventListener('popstate',onPopState);
+    closeButton.onclick=null;
+    dialog.oncancel=null;
+    afterDismiss=null;
+    hide();
+  }
+  return {open,restore,dispose};
 }

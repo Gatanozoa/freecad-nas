@@ -251,8 +251,6 @@ def create_app(store=None):
                         raise LookupError('文件不存在')
                     if not job['archived']:
                         return JSONResponse({'error':'本版本模型尚未归档，请重新生成','code':'NOT_ARCHIVED'},409)
-                    if job['status']!='confirmed' and name not in ('model.stl','report.json'):
-                        return JSONResponse({'error':'请先确认草稿'},409)
                     file=store.root/'files'/job['id']/name
                     if not file.is_file():
                         return JSONResponse({'error':'归档文件缺失，请重新生成','code':'ARCHIVE_MISSING'},410)

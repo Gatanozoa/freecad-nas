@@ -1,12 +1,12 @@
-import {viewportReport} from './viewport.js?v=0.5.2';
-import {chatScreen, loadThumbnail} from './chat.js?v=0.5.2';
-import {providerScreen} from './provider-ui.js?v=0.5.2';
-import {createPreview} from './preview.js?v=0.5.2';
-import {connectionCard, taskRecord} from './chat-ui.js?v=0.5.2';
+import {viewportReport} from './viewport.js?v=0.5.3';
+import {chatScreen, loadThumbnail} from './chat.js?v=0.5.3';
+import {providerScreen} from './provider-ui.js?v=0.5.3';
+import {createPreview,modelDownloadButtons} from './preview.js?v=0.5.3';
+import {connectionCard, taskRecord} from './chat-ui.js?v=0.5.3';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const state={jobs:[],providers:[],poll:null,search:'',filter:'all'};
-const labels={pending:'等待处理',working:'进行中',cancelling:'正在停止',review:'待确认',confirmed:'已完成',needs_confirmation:'待确认尺寸',needs_input:'待补充',failed:'未完成',cancelled:'已取消',interrupted:'已中断'};
-const stages={dimensions_review:'等待尺寸确认',dimensions_confirmed:'尺寸已确认，准备建模',pending:'等待分析',demo:'固定零件测试',generating:'分析需求并生成脚本',repairing:'正在修复脚本（第 1 次）',submitting:'提交到 FreeCAD',cad_queued:'等待 FreeCAD 建模',cad_unavailable:'FreeCAD 执行端暂不可用',building:'FreeCAD 正在建模',archiving:'保存模型并准备预览',review:'草稿已就绪',confirmed:'这一版已确认',needs_input:'需要你补充信息',failed:'本次生成未完成',cancelled:'任务已取消'};
+const labels={pending:'等待处理',working:'进行中',cancelling:'正在停止',review:'已完成',confirmed:'已完成',needs_confirmation:'待确认尺寸',needs_input:'待补充',failed:'未完成',cancelled:'已取消',interrupted:'已中断'};
+const stages={dimensions_review:'等待尺寸确认',dimensions_confirmed:'尺寸已确认，准备建模',pending:'等待分析',demo:'固定零件测试',generating:'分析需求并生成脚本',repairing:'正在修复脚本（第 1 次）',submitting:'提交到 FreeCAD',cad_queued:'等待 FreeCAD 建模',cad_unavailable:'FreeCAD 执行端暂不可用',building:'FreeCAD 正在建模',archiving:'保存模型并准备预览',review:'模型已就绪',confirmed:'模型已就绪',needs_input:'需要你补充信息',failed:'本次生成未完成',cancelled:'任务已取消'};
 const active=j=>['pending','working','cancelling'].includes(j.status);
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(state.toast);state.toast=setTimeout(()=>$('#toast').hidden=true,6000)}
 async function api(path,options={}){
@@ -42,7 +42,7 @@ function showLogin(){
   clearTimeout(state.poll);clearInterval(state.healthTimer);
   if($('#preview-dialog').open)$('#preview-dialog').close();
 }
-function pill(job){return `<span class="pill ${job.status==='failed'?'failed':['needs_input','review'].includes(job.status)?'warn':''}">${esc(labels[job.status]||job.status)}</span>`}
+function pill(job){return `<span class="pill ${job.status==='failed'?'failed':['needs_input','needs_confirmation'].includes(job.status)?'warn':''}">${esc(labels[job.status]||job.status)}</span>`}
 function showDialog(html){$('#dialog-content').innerHTML=html;$('#dialog').showModal()}
 $('#dialog-close').onclick=()=>$('#dialog').close();
 $('#login-form').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;try{await post('login',Object.fromEntries(new FormData(e.target)));await boot()}catch(error){toast(error.message)}finally{b.disabled=false}};
@@ -143,7 +143,8 @@ function libraryMatch(job){
   if(query&&!((job.name+' '+job.prompt).toLowerCase().includes(query)))return false;
   if(state.filter==='all')return true;
   if(state.filter==='active')return active(job);
-  if(state.filter==='review')return ['needs_input','needs_confirmation','review'].includes(job.status);
+  if(state.filter==='review')return ['needs_input','needs_confirmation'].includes(job.status);
+  if(state.filter==='confirmed')return ['review','confirmed'].includes(job.status);
   return job.status===state.filter;
 }
 async function library(isCurrent){
@@ -217,11 +218,8 @@ async function detail(id,isCurrent){
     </div>`;
   $('#versions').onchange=e=>location.hash='detail/'+e.target.value;
   const modify=()=>location.hash='job/'+job.id;
-  const preview=createPreview({
-    isCurrent,post,toast,esc,download,onContinue:modify,onConfirmed:update,
-    onConnectionError:showFailure,
-  });
-  state.detailCleanup=preview.close;
+  const preview=createPreview({isCurrent,toast,esc,download,onContinue:modify});
+  state.detailCleanup=preview.dispose;
 
   function update(next){
     if(!isCurrent())return;
@@ -235,10 +233,7 @@ async function detail(id,isCurrent){
     renderTask(job);
     $('#task-panel').querySelectorAll('details').forEach((node,i)=>{node.open=!!open[i]});
     $('#project-preview').innerHTML=job.archived?'<button class="primary" id="detail-preview">打开模型预览</button>':'';
-    if(job.archived){
-      $('#detail-preview').onclick=()=>preview.open(job);
-      $('#detail-confirm')?.addEventListener('click',()=>preview.open(job));
-    }
+    if(job.archived)$('#detail-preview').onclick=()=>preview.open(job);
     $('#modify')?.addEventListener('click',modify);
     $('#cancel')?.addEventListener('click',async e=>{
       e.target.disabled=true;
@@ -269,6 +264,7 @@ async function detail(id,isCurrent){
     }
   }
   update(job);
+  preview.restore([job]);
   if(active(job))state.poll=setTimeout(poll,2500);
 }
 function renderFacts(job){
@@ -286,12 +282,11 @@ function renderTask(job){
       ${job.stage==='cad_unavailable'?'<p class="notice error">'+esc(job.cad_health?.message||'FreeCAD 执行端未就绪，正在等待恢复。')+'</p>':''}
       <button id="cancel">取消任务</button></div>`:''}
     ${taskRecord(job,{esc,active})}
-    ${job.status==='review'?'<div class="panel"><p>请核对预览与尺寸，再确认这一版。</p><button class="primary" id="detail-confirm">查看并确认</button></div>':''}
     ${job.status==='needs_confirmation'?'<div class="panel"><p>关键尺寸已整理，请在会话中确认后开始建模。</p><button id="modify">打开尺寸确认卡片</button></div>':''}
     ${job.status==='needs_input'?'<div class="panel"><ul class="list">'+(job.plan?.questions||[]).map(q=>`<li>${esc(q)}</li>`).join('')+'</ul><button id="modify" class="primary">补充信息</button></div>':''}
     ${['failed','cancelled','interrupted'].includes(job.status)?'<div class="panel"><p>'+esc(job.status==='cancelled'?'任务已取消。':'本次生成未完成。')+'</p><button id="modify">修改并重新生成</button></div>':''}
     ${job.error?`<details class="project-disclosure"><summary>错误原因与技术详情</summary><pre>${esc(job.error)}</pre></details>`:''}
-    ${job.status==='confirmed'?'<div class="panel"><h3>下载模型</h3><div class="actions">'+['model.stl','model.step','model.FCStd'].map(f=>`<button data-file="${f}">${f.split('.').pop()}</button>`).join('')+'</div></div>':''}
+    ${job.archived?`<div class="panel"><h3>下载模型</h3><div class="actions">${modelDownloadButtons()}</div></div>`:''}
     <div class="panel"><h3>用量</h3><p class="muted">${usage(job.usage)}</p></div>
     <details class="project-disclosure"><summary>高级信息 · 生成脚本</summary><p class="mono">任务 ${esc(job.id)}<br>CAD ${esc(job.remote||'尚未提交')}</p>
       ${job.script?'<pre id="source-code">'+esc(job.script)+'</pre>':'<p class="muted">本次任务尚未生成可用脚本。</p>'}</details>
@@ -318,7 +313,7 @@ function renderTask(job){
       catch(error){toast(error.message)}
     };
   };
-  $('#task-panel').querySelectorAll('[data-file]').forEach(button=>button.onclick=()=>download(job.id,button.dataset.file));
+  $('#task-panel').querySelectorAll('[data-download]').forEach(button=>button.onclick=()=>download(job.id,button.dataset.download));
 }
 function usage(rows){if(!rows?.some(Boolean))return '服务商未提供统计，或本次没有调用模型。';let sum=0,known=false;for(const row of rows){if(row?.total_tokens!=null){sum+=row.total_tokens;known=true}}return known?`累计 ${sum.toLocaleString()} token · ${rows.length} 次调用`:'已记录原始用量，但该服务商未返回 total_tokens。'}
 async function download(id,name){try{const r=await fetch(`/api/jobs/${id}/files/${name}`);if(!r.ok)throw Error((await r.json()).error);const url=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000)}catch(e){toast(e.message)}}
@@ -343,7 +338,7 @@ async function settings(isCurrent=()=>location.hash==='#settings'){
     <details class="settings-disclosure" id="settings-connection"><summary>连接与存储</summary><div class="settings-body">
       <p class="muted" id="cad-status">FreeCAD 连接尚未测试</p><button id="test-cad">检查 FreeCAD</button>
       <p class="muted">已归档模型约 ${(storage.bytes/1024/1024).toFixed(2)} MB。成功版本保留到手动删除。</p>
-      <p class="muted" id="client-version">客户端 0.5.2 · 服务端 ${esc(state.serverVersion||'未知')}</p>
+      <p class="muted" id="client-version">客户端 0.5.3 · 服务端 ${esc(state.serverVersion||'未知')}</p>
       <button id="refresh-interface">检查更新并刷新界面</button><details><summary>键盘与窗口诊断</summary><pre id="viewport-report">${esc(viewportReport())}</pre></details>
     </div></details>
     <details class="settings-disclosure" id="settings-password"><summary>修改密码</summary><div class="settings-body">

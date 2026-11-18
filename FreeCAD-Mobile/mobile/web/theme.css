@@ -19,7 +19,7 @@ nav{background:var(--paper);border:0;gap:8px}nav a{color:var(--muted)}nav a.acti
 .composer-tools{gap:8px;height:44px}.composer-tools select{height:44px;min-height:44px;max-width:none;margin:0;padding:0 24px 0 8px;border:0;border-radius:10px;background:var(--control);font-size:13px;font-weight:600;text-align:center;text-overflow:ellipsis}
 .composer-tools .icon-button,.composer-tools .send-button{width:40px;height:44px;min-height:44px;flex:0 0 40px;border-radius:10px;padding:0;font-size:20px;display:grid;place-items:center;line-height:1}
 .composer-shortcuts button{padding-left:0}.chat-heading h1{font-size:20px}.chat-empty h2{font-size:24px}.user-message{border-radius:16px}.model-message{width:min(560px,100%)}
-.chat-sidebar{display:none}.preview-content .actions{background:var(--paper)}
+.chat-sidebar{display:none}
 #preview-dialog{background:var(--paper);border-color:#434449;width:min(920px,calc(100% - 32px));padding:20px;max-height:calc(100dvh - 32px)}
 #preview-dialog h2{font-size:18px;min-height:44px;display:flex;align-items:center;margin-bottom:12px}
 .preview-close{width:44px;min-height:44px;border:0;background:var(--control)}
@@ -163,8 +163,11 @@ nav a[aria-current="page"]{font-weight:700}
 .project-disclosure p,.project-disclosure pre{margin:0 12px 12px;padding-bottom:8px}
 .project-actions{display:grid;gap:12px;margin-top:16px}
 .project-actions button{min-height:50px;background:var(--paper)}
-.preview-instruction{margin:18px 0 0}
-#preview-dialog .tabs button,#preview-dialog .preview-actions .actions button{flex:1}
+#preview-dialog .tabs button{flex:1}
+.preview-actions{display:grid;gap:12px;margin-top:20px}
+.preview-downloads{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.preview-downloads button{padding-inline:4px}
+#continue-chat{width:100%}
 .settings-page{display:flex;flex-direction:column;min-height:calc(100dvh - 170px)}
 .settings-layout{display:grid;gap:12px;max-width:640px}
 .settings-model{margin:0}
