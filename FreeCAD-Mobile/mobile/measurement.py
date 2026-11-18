@@ -3,21 +3,45 @@ import hashlib
 import json
 
 SOURCES = {'user', 'drawing', 'estimate', 'unknown'}
+ISSUE_KINDS = {'conflict', 'ambiguity', 'unsupported', 'advisory'}
+DEFAULT_QUESTION = '请补充零件的用途、外形尺寸和厚度，并说明孔径、孔位或配合尺寸；图片没有标注时请实测后提供。'
 
-def review(plan):
+def separate_issues(raw_issues, *, model_response):
+    if not isinstance(raw_issues, list):
+        raise ValueError('尺寸问题必须以数组返回')
+    blocking, advisories = [], []
+    for issue in raw_issues:
+        if isinstance(issue, str) and not model_response:
+            # Stored plans from earlier versions use plain strings for blocking issues.
+            if issue.strip():
+                blocking.append(issue.strip())
+            continue
+        if not isinstance(issue, dict) or issue.get('kind') not in ISSUE_KINDS:
+            raise ValueError('请为每项 measurement.issues 指定 kind 和 message。'
+                             '冲突用 conflict，结构或单位无法确定用 ambiguity，能力不支持用 unsupported。'
+                             '估算依据、已选方案、草稿复核建议用 advisory 或放入 assumptions。')
+        message = issue.get('message')
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError('尺寸问题缺少简短说明')
+        target = advisories if issue['kind'] == 'advisory' else blocking
+        target.append(message.strip())
+    return blocking, advisories
+
+def review(plan, *, model_response=False):
     raw = plan.get('measurement')
-    questions = list(plan.get('questions') or [])
-    if not isinstance(raw, dict) or not isinstance(raw.get('parameters'), list) or not raw['parameters']:
-        return {'parameters': [], 'issues': [], 'missing': [], 'questions': questions or
-                ['请补充零件的用途、外形尺寸和厚度，并说明孔径、孔位或配合尺寸；图片没有标注时请实测后提供。'], 'ready': False}
-    if len(raw['parameters']) > 80:
+    questions = [item.strip() for item in (plan.get('questions') or []) if item.strip()]
+    if not isinstance(raw, dict):
+        raw = {}
+    issues, advisories = separate_issues(raw.get('issues', []), model_response=model_response)
+    raw_parameters = raw.get('parameters')
+    if not isinstance(raw_parameters, list) or not raw_parameters:
+        return {'parameters': [], 'issues': issues, 'advisories': advisories, 'missing': [],
+                'questions': list(dict.fromkeys(questions or issues or [DEFAULT_QUESTION]))[:3], 'ready': False}
+    if len(raw_parameters) > 80:
         raise ValueError('尺寸参数过多，请分解零件后重试')
     parameters=[]; missing=[]
-    issues=raw.get('issues', [])
-    if not isinstance(issues,list) or any(not isinstance(x,str) for x in issues):
-        raise ValueError('尺寸冲突字段格式错误')
     names=set()
-    for item in raw['parameters']:
+    for item in raw_parameters:
         if not isinstance(item,dict) or not isinstance(item.get('name'),str) or not item['name'].strip():
             raise ValueError('尺寸参数名称不完整')
         name=item['name'].strip()[:120]
@@ -38,11 +62,20 @@ def review(plan):
             missing.append(parameter)
     if not any(p['required'] for p in parameters):
         issues=[*issues,'请明确本零件建模必需的外形与结构参数。']
+    if model_response:
+        notes = set(advisories) | {note.strip() for note in plan.get('assumptions', [])}
+        questions = [question for question in questions if question not in notes]
+        if questions and not (missing or issues):
+            raise ValueError('必要尺寸均已填写，但 questions 中仍有未归类内容：'
+                             + '；'.join(questions)[:500]
+                             + '。逐项判断：真正缺失的必要参数标为 unknown，未解决的冲突或结构问题填入带类型的 issues。'
+                               '已给出具体值的估算、可选细节和复核建议移入 assumptions。'
+                               '没有阻塞项时 questions 必须为空，并返回完整脚本供整表确认。')
     if missing or issues:
-        questions=questions or [p['question'] or '请提供'+p['name'] for p in missing] + issues
-    return {'parameters':parameters,'issues':issues,'missing':missing,
-            'questions':list(dict.fromkeys(questions))[:3],
-            'ready':not (missing or issues or questions)}
+        questions = questions or [p['question'] or '请提供'+p['name'] for p in missing] + issues
+    return {'parameters': parameters, 'issues': issues, 'advisories': advisories, 'missing': missing,
+            'questions': list(dict.fromkeys(questions))[:3],
+            'ready': not (missing or issues or questions)}
 
 def approval_digest(plan, script):
     payload=[script, plan.get('measurement'),plan.get('assumptions',[]),plan.get('dimensions',[])]

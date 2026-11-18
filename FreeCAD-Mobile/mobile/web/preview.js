@@ -13,7 +13,7 @@ export function createPreview({isCurrent,post,toast,esc,download,onContinue,onCo
     dialog.showModal();previewActions(job);
     for(const tab of content.querySelectorAll('[role=tab]'))tab.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const target=content.querySelector(e.key==='Home'?'#preview-model':e.key==='End'?'#preview-drawings':tab.id==='preview-model'?'#preview-drawings':'#preview-model');target.click();target.focus()}};
     function selectTab(drawings){for(const tab of content.querySelectorAll('[role=tab]')){const selected=(tab.id==='preview-drawings')===drawings;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1}}
-    try{const {mountViewer}=await import('./viewer.js?v=0.5.1');if(!isCurrent()||epoch!==previewEpoch)return;
+    try{const {mountViewer}=await import('./viewer.js?v=0.5.2');if(!isCurrent()||epoch!==previewEpoch)return;
       const v=await mountViewer(content.querySelector('#preview-viewer'),`/api/jobs/${job.id}/files/model.stl`);
       if(!isCurrent()||epoch!==previewEpoch){v.dispose();return}preview=v;
     }catch(e){if(epoch===previewEpoch)content.querySelector('#preview-viewer').innerHTML=`<div class="viewer-message">${esc(e.message)}<button id="retry-preview">重试预览</button></div>`;content.querySelector('#retry-preview')?.addEventListener('click',()=>openPreview(job))}

@@ -188,6 +188,7 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             store.update(third['id'],status='needs_confirmation',stage='dimensions_review',script=DEMO,plan=json.dumps(plan))
             expect(page.locator('[data-confirm-dimensions]')).to_be_enabled(timeout=15000)
             expect(page.locator('.estimated')).to_contain_text('建议 / 估算')
+            expect(page.get_by_text('中心孔贯通', exact=True)).to_be_visible()
             expect(page.locator('.thinking')).to_have_count(0)
             page.screenshot(path=str(screens/'19-measurement-confirmation-mobile.png'),full_page=True)
             page.locator('[data-confirm-dimensions]').click()
@@ -272,7 +273,7 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             page.locator('.task-record summary').click()
             expect(page.locator('.task-record li').last).to_contain_text('任务已取消')
             page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            page.goto(origin+'/#settings');page.locator('#settings-connection > summary').click();expect(page.locator('#client-version')).to_contain_text('0.5.1');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
+            page.goto(origin+'/#settings');page.locator('#settings-connection > summary').click();expect(page.locator('#client-version')).to_contain_text('0.5.2');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
             expect(page.locator('body')).not_to_have_class(__import__('re').compile('chat-viewport'))
             assert not errors,errors
             browser.close()

@@ -26,8 +26,8 @@ def provider_error(status):
 SYSTEM = '''你是机械零件建模助手。长度单位毫米。优先保持原脚本，只修改用户要求的部分。
 只返回一个 JSON 对象，字段：summary(中文概述), assumptions(假设字符串数组),
 dimensions(关键尺寸说明字符串数组), questions(必须补充的问题字符串数组), script(完整FreeCAD Python代码)。
-图片标注看不清时不要擅自确定关键尺寸，questions写出问题，此时script为空。
-不输出思维链。手办、有机角色精雕不属于本服务能力，应通过questions说明需要其他建模工具。
+图片标注看不清时，不得把推算当成图纸实测值。按尺寸规则区分待解决问题和草稿假设。
+不输出思维链。手办、有机角色精雕不属于本服务能力，应通过 measurement.issues 的 unsupported 条目说明。
 有足够信息时questions为空。允许import FreeCAD as App, Part, Mesh, MeshPart, Draft, math。
 禁止GUI、文件IO、网络、子进程、导入其他模块、自行导出、openDocument。
 必须创建文档，result为最终含有效正体积实体Shape的文档对象，doc.recompute()。
@@ -52,7 +52,7 @@ async def generate(config, prompt, images=(), base=None, feedback=None):
         messages.append({'role':'user','content':'上一版完整脚本：\n' + base})
     messages.append({'role':'user','content':content if images else prompt})
     if feedback:
-        messages.append({'role':'user','content':'上次执行失败。只修复错误，保留用户要求：\n'+feedback})
+        messages.append({'role':'user','content':'按以下反馈修订上次结果，保留用户要求：\n'+feedback})
     async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=15), follow_redirects=False) as client:
         response = await client.post(endpoint_url(config),
             headers={'Authorization':'Bearer '+config['key']},
@@ -74,8 +74,10 @@ async def generate(config, prompt, images=(), base=None, feedback=None):
         raise ValueError('脚本为空或超过 50000 字符')
     for key in ('measurement_approval','measurement_confirmed_at','measurement_review'):
         plan.pop(key,None)
-    if review(plan)['ready'] and not plan['script']:
-        raise ValueError('参数完整但缺少建模脚本')
+    dimensions = review(plan, model_response=True)
+    plan['questions'] = dimensions['questions']
+    if dimensions['ready'] and not plan['script'].strip():
+        raise ValueError('必要尺寸已齐全，请生成完整建模脚本供用户整表确认')
     return plan, body.get('usage')
 
 async def probe(config, vision=False):

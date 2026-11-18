@@ -1,8 +1,8 @@
-import {viewportReport} from './viewport.js?v=0.5.1';
-import {chatScreen, loadThumbnail} from './chat.js?v=0.5.1';
-import {providerScreen} from './provider-ui.js?v=0.5.1';
-import {createPreview} from './preview.js?v=0.5.1';
-import {connectionCard, taskRecord} from './chat-ui.js?v=0.5.1';
+import {viewportReport} from './viewport.js?v=0.5.2';
+import {chatScreen, loadThumbnail} from './chat.js?v=0.5.2';
+import {providerScreen} from './provider-ui.js?v=0.5.2';
+import {createPreview} from './preview.js?v=0.5.2';
+import {connectionCard, taskRecord} from './chat-ui.js?v=0.5.2';
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const state={jobs:[],providers:[],poll:null,search:'',filter:'all'};
 const labels={pending:'等待处理',working:'进行中',cancelling:'正在停止',review:'待确认',confirmed:'已完成',needs_confirmation:'待确认尺寸',needs_input:'待补充',failed:'未完成',cancelled:'已取消',interrupted:'已中断'};
@@ -343,7 +343,7 @@ async function settings(isCurrent=()=>location.hash==='#settings'){
     <details class="settings-disclosure" id="settings-connection"><summary>连接与存储</summary><div class="settings-body">
       <p class="muted" id="cad-status">FreeCAD 连接尚未测试</p><button id="test-cad">检查 FreeCAD</button>
       <p class="muted">已归档模型约 ${(storage.bytes/1024/1024).toFixed(2)} MB。成功版本保留到手动删除。</p>
-      <p class="muted" id="client-version">客户端 0.5.1 · 服务端 ${esc(state.serverVersion||'未知')}</p>
+      <p class="muted" id="client-version">客户端 0.5.2 · 服务端 ${esc(state.serverVersion||'未知')}</p>
       <button id="refresh-interface">检查更新并刷新界面</button><details><summary>键盘与窗口诊断</summary><pre id="viewport-report">${esc(viewportReport())}</pre></details>
     </div></details>
     <details class="settings-disclosure" id="settings-password"><summary>修改密码</summary><div class="settings-body">

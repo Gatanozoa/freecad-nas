@@ -1,18 +1,20 @@
-# 移动端 0.5.1
+# 移动端 0.5.2
 
 会话页默认打开最近会话。使用「新建对话」可以打开独立草稿。任务记录保留各阶段及发生时间，点击展开查看。服务端断线后可以在会话中重试，已受理的建模任务会沿用原任务编号。模型库每个项目显示一张卡片，打开后可切换版本。
 
 移动端编辑时打开独立输入栏。可见区域变化时，编辑栏紧贴屏幕键盘上方。关闭输入栏后，草稿和会话位置会保留。
 
+整表确认会显示建议尺寸和复核说明。必要尺寸缺失、确有冲突或结构不明确时才进入追问。已有的待补充任务可以在原会话重新提交一次，生成新版的尺寸确认卡。
+
 ## 更新已有 NAS 项目
 
 1. 保留原项目名称、`.env` 和 `mobile-data` 数据卷。
-2. 用本目录的 Compose 文件 替换原 Compose。
-3. 如果 `.env` 内有 `MOBILE_VERSION`，改为 `MOBILE_VERSION=0.5.1`；其余配置保持原值，尤其不要重新生成 `MASTER_KEY`。
+2. 用本目录的 Compose 文件替换原 Compose。
+3. 如果 `.env` 内有 `MOBILE_VERSION`，改为 `MOBILE_VERSION=0.5.2`；其余配置保持原值，尤其不要重新生成 `MASTER_KEY`。
 4. 拉取新镜像并重新部署 app、orchestrator 两个容器，单纯重启不会更新镜像。
 5. 浏览器刷新页面；若已安装到桌面，关闭后重新打开。若页面仍为旧版，在设置的「连接与存储」中点击「检查更新并刷新界面」。
 
-镜像：`ghcr.io/gatanozoa/freecad-mobile:0.5.1`。无需本地构建或单独拉取 Python 镜像。FreeCAD 服务无需随此次界面升级更新。
+镜像：`ghcr.io/gatanozoa/freecad-mobile:0.5.2`。无需本地构建或单独拉取 Python 镜像。FreeCAD 服务无需随此次界面升级更新。
 
 新部署才使用 `.env.example` 生成 `.env`。升级时不要用示例覆盖真实配置。
 
@@ -23,7 +25,7 @@
 ```env
 PUBLIC_URL=https://cad.example.com
 ALLOWED_ORIGINS=http://192.168.1.100:8089
-MOBILE_VERSION=0.5.1
+MOBILE_VERSION=0.5.2
 ```
 
 PUBLIC_URL 自动加入白名单，ALLOWED_ORIGINS 可用英文逗号追加多个完整来源（协议、主机、非标准端口）。不要填写路径、通配符或结尾斜杠。

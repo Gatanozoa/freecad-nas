@@ -1,7 +1,7 @@
-import {measurementCard} from './measurement-ui.js?v=0.5.1';
-import {trackChatViewport} from './viewport.js?v=0.5.1';
-import {connectionCard, icon, taskRecord} from './chat-ui.js?v=0.5.1';
-import {createPreview} from './preview.js?v=0.5.1';
+import {measurementCard} from './measurement-ui.js?v=0.5.2';
+import {trackChatViewport} from './viewport.js?v=0.5.2';
+import {connectionCard, icon, taskRecord} from './chat-ui.js?v=0.5.2';
+import {createPreview} from './preview.js?v=0.5.2';
 // Conversation state is reconstructed from saved project versions, not browser-only messages.
 const thumbnailCache=new Map(); // In-memory only; private model images never enter persistent caches.
 export async function loadThumbnail(job,target,current){
@@ -9,7 +9,7 @@ export async function loadThumbnail(job,target,current){
   try{
     let url=thumbnailCache.get(job.id);
     if(!url){
-      const {mountViewer}=await import('./viewer.js?v=0.5.1');
+      const {mountViewer}=await import('./viewer.js?v=0.5.2');
       if(!current())return;
       const staging=document.createElement('div');
       staging.className='thumbnail-stage';

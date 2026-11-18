@@ -181,7 +181,7 @@ async def process(store,job_id):
                     plan,used=await interruptible(store,job_id,generate(config,prompt,images,base,feedback))
                 except (ValueError,KeyError,TypeError) as exc:
                     if attempt: raise
-                    feedback='上次响应格式不符合约定，请仅返回约定的 JSON 对象。'+store.safe_error(exc)
+                    feedback='上次建模方案校验未通过。请按约定返回完整 JSON 对象。'+store.safe_error(exc)
                     continue
                 for key in ('measurement_approval','measurement_confirmed_at'):
                     plan.pop(key,None)
@@ -190,8 +190,11 @@ async def process(store,job_id):
                 dimensions=review(plan)
                 plan['measurement']= {'parameters':dimensions['parameters'],'issues':dimensions['issues']}
                 plan['measurement_review']=dimensions
+                plan['questions']=dimensions['questions']
+                if dimensions['advisories']:
+                    plan['assumptions']=list(dict.fromkeys([*plan.get('assumptions', []), *dimensions['advisories']]))
                 if not dimensions['ready']:
-                    plan['questions']=dimensions['questions'];plan['script']=''
+                    plan['script']=''
                 else:
                     # A repair may reuse approval only for an identical parameter specification.
                     same_spec=resume_measurements and plan['measurement']==approval.get('measurement') and plan.get('assumptions',[])==approval.get('assumptions',[]) and plan.get('dimensions',[])==approval.get('dimensions',[])
