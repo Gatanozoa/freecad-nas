@@ -6,6 +6,9 @@ import threading
 import time
 from cryptography.fernet import Fernet
 import uvicorn
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 from playwright.sync_api import sync_playwright,expect
 from mobile.store import Store
 from mobile.api import create_app
@@ -14,7 +17,12 @@ qa=bootstrap.ROOT/'.qa';qa.mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory(dir=qa) as directory:
     os.environ['MASTER_KEY']=Fernet.generate_key().decode()
     sock=socket.socket();sock.bind(('127.0.0.1',0));origin='http://127.0.0.1:'+str(sock.getsockname()[1]);os.environ['PUBLIC_URL']=origin
-    store=Store(directory);server=uvicorn.Server(uvicorn.Config(create_app(store),log_level='critical',access_log=False))
+    store=Store(directory)
+    async def unavailable_cad(request):
+        return JSONResponse({'ready':False})
+    os.environ['CAD_URL']=origin+'/fixture/mcp'
+    app=Starlette(routes=[Route('/fixture/healthz',unavailable_cad),Mount('/',app=create_app(store))])
+    server=uvicorn.Server(uvicorn.Config(app,log_level='critical',access_log=False))
     with store.db() as db: db.execute('INSERT OR REPLACE INTO runtime VALUES(1,?)',(time.time()+120,))
     thread=threading.Thread(target=lambda:server.run(sockets=[sock]),daemon=True);thread.start()
     while not server.started:time.sleep(.05)
@@ -35,9 +43,11 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             assert settings.bounding_box()['height'] >= 44
             settings.click()
             expect(settings).to_have_attribute('aria-current','page')
-            page.route('**/api/cad',lambda route:route.fulfill(json={'ready':False}))
             page.locator('#settings-connection > summary').click()
-            page.locator('#test-cad').click();expect(page.locator('#cad-status')).to_contain_text('暂未就绪')
+            with page.expect_response(lambda response:response.url==origin+'/api/cad') as checked:
+                page.locator('#test-cad').click()
+            assert checked.value.json()=={'ready':False}
+            expect(page.locator('#cad-status')).to_contain_text('暂未就绪')
             expect(page.locator('#connection')).to_have_text('任务后台在线')
             with store.db() as db: db.execute('UPDATE runtime SET heartbeat=0 WHERE id=1')
             page.clock.fast_forward(21000);expect(page.locator('#connection')).to_have_text('任务后台未就绪')
