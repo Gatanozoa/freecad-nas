@@ -1,16 +1,26 @@
-# FreeCAD MCP 镜像部署
+# 部署 FreeCAD MCP 服务
 
-镜像已公开，无需 GitHub 登录、源码、本地构建或 .env。仅 gateway、worker 两个容器。
+Gateway 提供管理页面和 MCP 接口，Worker 在关闭网络访问的容器中执行 FreeCAD 脚本。两个服务通过命名卷共享任务状态和模型产物。
 
-NAS IP 192.168.1.100，端口 8088；更换地址时同步修改 PUBLIC_URL。
-管理页：http://192.168.1.100:8088/admin
-MCP：http://192.168.1.100:8088/mcp
-健康检查：http://192.168.1.100:8088/healthz
+## 启动
 
-新部署使用 admin/admin 登录，在管理页修改密码并新增 Agent；各客户端使用独立 Bearer Token。移动端设置的 CAD_URL 也指向此 MCP 地址。
+将 [compose.yml](compose.yml) 和 [.env.example](.env.example) 放入同一目录。在该目录运行 `cp .env.example .env`，然后填写三个网络参数。
 
-升级必须保留原项目名称以及 state、artifacts 卷，否则会初始化新的队列与账号。原来通过 CAD_AGENTS 环境变量配置 Agent 的部署，请保留原值；管理页持久化的 Agent 继续从 state 卷读取。不要删除数据卷。
+| 变量 | 用途 |
+| --- | --- |
+| `BIND_ADDRESS` | Docker 主机用于监听请求的局域网 IP |
+| `HTTP_PORT` | 对外提供服务的端口，默认为 `8088` |
+| `PUBLIC_URL` | 浏览器和 Agent 实际访问的服务地址，包含协议和端口，例如 `http://nas.example.com:8088` |
 
-worker 单线程排队执行，默认每任务 180 秒，成功产物默认保留最近 10 个，可在管理页调整。失败/取消/超时产物由执行端清理。Worker 禁止网络访问；模型脚本仅应提交可信任务。
+```sh
+docker compose up -d
+docker compose ps
+```
 
-本配置使用命名卷，不需要 storage-init 或宿主目录权限调整。worker 首次启动执行 FreeCAD 自检；等待健康检查通过后再提交任务。
+Worker 首次启动时会运行 FreeCAD 自检。两个容器均显示 healthy 后，通过 `PUBLIC_URL` 下的 `/admin` 登录，初始用户名和密码均为 `admin`。修改密码后，在管理页为每个 Agent 创建独立的 Bearer Token。MCP 客户端连接 `/mcp`，健康检查地址为 `/healthz`。
+
+也可以单独下载 [compose.standalone.yml](compose.standalone.yml)，在其中填写 `PUBLIC_URL` 后运行 `docker compose -f compose.standalone.yml up -d`。该文件自带环境配置。
+
+## 任务和数据
+
+`state` 卷持久化账号、队列和任务记录，`artifacts` 卷保存导出的模型。Worker 每次执行一个任务，默认超时为 180 秒。服务默认保存最近 10 个成功任务的产物，可在管理页调整。仅向可信 Agent 发放执行模型脚本的权限。

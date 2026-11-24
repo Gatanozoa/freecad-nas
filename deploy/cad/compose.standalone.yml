@@ -1,5 +1,4 @@
 # FreeCAD MCP: image-only deployment; no .env required.
-# Upgrade in the SAME Docker project to reuse state/artifacts volumes.
 services:
   gateway:
     ports:
