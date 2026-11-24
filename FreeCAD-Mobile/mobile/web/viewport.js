@@ -6,7 +6,7 @@ export function viewportReport(){
   const editing=document.querySelector('#keyboard-editor:not([hidden]) textarea');
   const input=editing||document.querySelector(matchMedia('(max-width:800px)').matches?'#edit-prompt':'#prompt');
   const r=input?.getBoundingClientRect();
-  return JSON.stringify({client:'0.5.3',origin:location.origin,userAgent:navigator.userAgent,
+  return JSON.stringify({client:'0.6.0',origin:location.origin,userAgent:navigator.userAgent,
     standalone:matchMedia('(display-mode:standalone)').matches,innerHeight,innerWidth,
     visual:v?{height:v.height,top:v.offsetTop,scale:v.scale}:null,
     prompt:r?{top:r.top,bottom:r.bottom}:null,events:trace},null,2);

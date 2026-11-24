@@ -129,7 +129,7 @@ export function createPreview({isCurrent,toast,esc,download,onContinue}){
       view.innerHTML='<div class="viewer-message">正在加载模型…</div>';
       const current=()=>isCurrent()&&generation===epoch;
       try{
-        const {mountViewer}=await import('./viewer.js?v=0.5.3');
+        const {mountViewer}=await import('./viewer.js?v=0.6.0');
         if(!current())return;
         const loaded=await mountViewer(view,`/api/jobs/${job.id}/files/model.stl`);
         if(current())viewer=loaded;else loaded.dispose();

@@ -55,6 +55,11 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             assert page.locator('header').evaluate('el=>getComputedStyle(el).backgroundColor')=='rgb(27, 28, 31)'
             expect(page.locator('#create-add-provider')).to_have_count(0)
             assert page.locator('html').evaluate("el=>getComputedStyle(el).backgroundColor")=='rgb(16, 17, 19)'
+            tab_bar=page.locator('nav').bounding_box()
+            assert tab_bar['x'] >= 16 and tab_bar['y']+tab_bar['height'] <= 844-8
+            for link in page.locator('nav a').all():
+                expect(link.locator('.tab-icon')).to_be_visible()
+                assert link.bounding_box()['height'] >= 44
             boxes=[page.locator(s).bounding_box() for s in ('#attach','#provider','#generate')]
             assert all(abs(b['height']-44)<1 for b in boxes),boxes
             assert max(b['y'] for b in boxes)-min(b['y'] for b in boxes)<1,boxes
@@ -159,6 +164,8 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             page.screenshot(path=str(screens/'16-dark-projections-mobile.png'),full_page=True)
             page.locator('#preview-model').click();page.screenshot(path=str(screens/'14-chat-preview-mobile.png'),full_page=True)
             dialog=page.locator('#preview-dialog')
+            sheet=dialog.bounding_box()
+            assert abs(sheet['y']+sheet['height']-(844-8))<2,sheet
             expect(dialog.locator('#confirm-model')).to_have_count(0)
             for name,data in model_files.items():
                 button=dialog.locator(f'[data-download="{name}"]')
@@ -317,7 +324,7 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
             page.locator('.task-record summary').click()
             expect(page.locator('.task-record li').last).to_contain_text('任务已取消')
             page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            page.goto(origin+'/#settings');page.locator('#settings-connection > summary').click();expect(page.locator('#client-version')).to_contain_text('0.5.3');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
+            page.goto(origin+'/#settings');page.locator('#settings-connection > summary').click();expect(page.locator('#client-version')).to_contain_text('0.6.0');expect(page.locator('#viewport-report')).not_to_contain_text('将直径改为');page.locator('#add-provider').click();expect(page.locator('#provider-form')).to_be_visible()
             expect(page.locator('body')).not_to_have_class(__import__('re').compile('chat-viewport'))
             assert not errors,errors
             browser.close()

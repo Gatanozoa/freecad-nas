@@ -20,12 +20,21 @@ with tempfile.TemporaryDirectory(dir=qa) as directory:
     while not server.started:time.sleep(.05)
     try:
         with sync_playwright() as p:
-            browser=p.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL') or None,headless=True)
-            context=browser.new_context(viewport={'width':390,'height':844});page=context.new_page();errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
+            if os.environ.get('BROWSER_ENGINE') == 'webkit':
+                browser=p.webkit.launch()
+                context=browser.new_context(**p.devices['iPhone 13'])
+            else:
+                browser=p.chromium.launch(channel=os.environ.get('BROWSER_CHANNEL') or None,headless=True)
+                context=browser.new_context(viewport={'width':390,'height':844})
+            page=context.new_page();errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
             page.clock.install()
             page.goto(origin);page.locator('[name=password]').fill('admin');page.locator('#login-form button').click();expect(page.locator('#main h1')).to_have_text('新建对话')
             expect(page.locator('#connection')).to_have_text('任务后台在线')
-            page.goto(origin+'/#settings')
+            settings=page.locator('nav a[data-nav=settings]')
+            expect(settings.locator('.tab-icon')).to_be_visible()
+            assert settings.bounding_box()['height'] >= 44
+            settings.click()
+            expect(settings).to_have_attribute('aria-current','page')
             page.route('**/api/cad',lambda route:route.fulfill(json={'ready':False}))
             page.locator('#settings-connection > summary').click()
             page.locator('#test-cad').click();expect(page.locator('#cad-status')).to_contain_text('暂未就绪')

@@ -190,3 +190,104 @@ nav a[aria-current="page"]{font-weight:700}
   .model-thumbnail{width:100%;height:clamp(140px,25dvh,270px);font-size:13px}
   .model-caption{padding:10px 12px}
 }
+
+/* Phone navigation, grouped content and model sheet share the same touch metrics. */
+.tab-icon, .phone-login-title, .login-brand { display: none; }
+
+@media (max-width: 800px) {
+  :root {
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, "Microsoft YaHei", sans-serif;
+    --phone-gutter: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
+    --bar-gap: max(8px, env(safe-area-inset-bottom));
+    --title-height: calc(54px + env(safe-area-inset-top));
+    --bar-surface: #292a2e;
+  }
+
+  .login { display: block; padding: 0; }
+  .login-brand {
+    height: var(--title-height); padding: env(safe-area-inset-top) var(--phone-gutter) 0;
+    display: flex; align-items: center; background: var(--paper);
+    font-size: 1.5rem; font-weight: 800; letter-spacing: -1px;
+  }
+  .login-panel {
+    margin: auto; max-width: 520px; padding: 26px var(--phone-gutter);
+    background: transparent; border: 0;
+  }
+  .login h1 { font-size: 2rem; }
+  .desktop-login-title { display: none; }
+  .phone-login-title { display: inline; }
+  header, .chat-viewport header {
+    height: var(--title-height);
+    flex-basis: var(--title-height);
+    padding: env(safe-area-inset-top) var(--phone-gutter) 0;
+    background: var(--paper);
+  }
+  header .brand { display: inline-flex; align-items: center; min-height: 44px; font-size: 1.5rem; }
+  header .pill { font-size: .75rem; }
+  main, .chat-viewport .chat-page { padding-inline: var(--phone-gutter); }
+  main { padding-bottom: calc(90px + var(--bar-gap)); }
+  .chat-viewport .chat-page { padding-block: 10px 4px; }
+
+  nav, .chat-viewport nav {
+    width: min(360px, calc(100% - var(--phone-gutter) * 2));
+    height: 60px;
+    margin: 0 auto var(--bar-gap);
+    padding: 4px;
+    gap: 2px;
+    border-radius: 32px;
+    background: var(--bar-surface);
+    box-shadow: inset 0 0 0 1px #ffffff21, 0 4px 16px #0003;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  nav a {
+    min-height: 44px; min-width: 44px; max-width: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; padding: 2px 4px; border-radius: 28px;
+    font-size: .75rem; line-height: 1.2; color: #c4c4cb;
+  }
+  nav a.active { color: var(--accent); background: #424247; }
+  .tab-icon { display: block; }
+  .page-head h1 { font-size: 2rem; line-height: 1.15; }
+  .chat-heading h1 { font-size: 1.125rem; }
+  .assistant-message, .user-message p, .pending-message { font-size: 1rem; line-height: 1.55; }
+  .task-record, .model-message, .library-cards .card, .settings-disclosure,
+  .project-disclosure, .connection-card { border-radius: 18px; }
+  .settings-disclosure > summary, .project-disclosure > summary { min-height: 52px; font-size: 1rem; }
+  .settings-disclosure > summary::after, .project-disclosure > summary::after { margin-left: auto; }
+  .library-controls input { border-radius: 16px; }
+  .library-filters button { border-radius: 24px; min-width: 44px; }
+  .composer { border-radius: 24px; }
+  .composer-prompt-trigger { font-size: 1rem; min-height: 44px; }
+  .composer-tools .icon-button, .composer-tools .send-button { width: 44px; flex-basis: 44px; border-radius: 50%; }
+  .composer-tools select { border-radius: 22px; }
+  .task-details, .detail-heading a { display: inline-flex; align-items: center; min-height: 44px; }
+  .chat-home .composer-shortcuts button, .composer-shortcuts button, .provider button,
+  .viewer-tools button, .image-tile button { min-height: 44px; }
+  .viewer-tools button { min-width: 44px; }
+  input:not([type=checkbox]), select, textarea { font-size: max(1rem, 16px); }
+
+  #preview-dialog {
+    position: fixed; inset: auto 0 0; margin: 0 auto var(--bar-gap);
+    width: min(560px, calc(100% - 32px));
+    max-height: calc(100dvh - env(safe-area-inset-top) - var(--bar-gap) - 12px);
+    border-radius: 28px; padding: 20px; overscroll-behavior: contain;
+  }
+  .preview-close { border-radius: 50%; }
+  #preview-dialog .tabs { padding: 3px; gap: 2px; background: var(--control); border-radius: 25px; }
+  #preview-dialog .tabs button { border: 0; background: transparent; border-radius: 22px; }
+  #preview-dialog .tabs .selected { background: #48484d; color: inherit; }
+  .preview-downloads button, #continue-chat { border-radius: 24px; }
+  #continue-chat { color: var(--accent); }
+
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    nav, .chat-viewport nav {
+      background: rgb(41 42 46 / 88%);
+      -webkit-backdrop-filter: blur(18px) saturate(125%);
+      backdrop-filter: blur(18px) saturate(125%);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    nav, .chat-viewport nav { background: var(--bar-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  }
+}

@@ -28,7 +28,7 @@ jobs:
           python-version: '3.13'
       - run: python scripts/check_release.py
       - run: python -m pip install -r FreeCAD-Mobile/requirements.txt playwright==1.64.1
-      - run: python -m playwright install --with-deps chromium
+      - run: python -m playwright install --with-deps chromium webkit
       - name: Auth, configuration, queue, archive and script contract tests
         working-directory: FreeCAD-Mobile
         run: python -m unittest discover -s tests -p 'test_*.py' -v
@@ -38,6 +38,9 @@ jobs:
           python tests/browser_chat.py
           python tests/browser_provider_settings.py
           python tests/browser_failed_details.py
+      - name: Check mobile navigation and settings on WebKit
+        working-directory: FreeCAD-Mobile
+        run: BROWSER_ENGINE=webkit python tests/browser_provider_settings.py
 
   publish:
     needs: test
